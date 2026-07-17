@@ -98,9 +98,9 @@ function mobileCompositingSafety() {
   assert.match(mobileCss, /\.celebration-layer::before[\s\S]*?backdrop-filter: none !important;/);
   assert.match(mobileCss, /\.commune-confetti,[\s\S]*?\.screen-flash,[\s\S]*?display: none !important;/);
   assert.match(mobileCss, /\.reel-strip[\s\S]*?will-change: auto !important;/);
-  assert.match(mobileJs, /function mobileReelAnimation/);
-  assert.match(mobileJs, /classList\?\.contains\("reel-strip"\)/);
-  assert.match(mobileJs, /frames\.length >= 3 && duration <= 180/);
+  assert.doesNotMatch(mobileJs, /Element\.prototype\.animate\s*=/);
+  assert.doesNotMatch(mobileJs, /function mobileReelAnimation/);
+  assert.doesNotMatch(mobileJs, /requestAnimationFrame\(step\)/);
   assert.match(mobileJs, /originalStartTierEffects\(\{ \.\.\.options, reducedMotion: true \}\)/);
   assert.match(mobileJs, /originalPresentCombination\(\{ \.\.\.options, reducedMotion: true \}\)/);
   assert.doesNotMatch(mobileCss, /@keyframes mobileLocalizedReelImpact/);
