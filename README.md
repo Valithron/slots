@@ -20,10 +20,12 @@ Then visit `http://localhost:8080`.
 /
 ├── index.html
 ├── styles.css
+├── presentation.css
 ├── package.json
 ├── js/
 │   ├── config.js
 │   ├── game-engine.js
+│   ├── game-flow.js
 │   ├── reels.js
 │   ├── payouts.js
 │   ├── ui.js
@@ -33,7 +35,8 @@ Then visit `http://localhost:8080`.
 │   ├── persistence.js
 │   └── statistics.js
 ├── tools/
-│   └── simulate.mjs
+│   ├── simulate.mjs
+│   └── presentation-tests.mjs
 ├── docs/
 │   └── math-model.md
 ├── assets/
@@ -45,21 +48,23 @@ Then visit `http://localhost:8080`.
 └── README.md
 ```
 
-The JavaScript uses ordered classic scripts and a single `globalThis.CommuneFortune` namespace. This keeps the game compatible with direct local opening while allowing the production math modules to be imported by the Node simulator.
+The JavaScript uses ordered classic scripts and a single `globalThis.CommuneFortune` namespace. This keeps the game compatible with direct local opening while allowing the production math modules to be imported by Node validation tools.
 
 ### Module responsibilities
 
-- `config.js`: reel maps, symbols, payouts, feature flags, RTP targets, line bets, and timing values
+- `config.js`: reel maps, symbols, payouts, feature flags, RTP targets, win-tier thresholds, and presentation timings
 - `game-engine.js`: game phase, authoritative spin-result creation, reload-safe settlement, and spin orchestration
-- `reels.js`: reel construction, positioning, and animation toward predetermined stops
-- `payouts.js`: pure matrix generation, line evaluation, and spin-result calculation
-- `ui.js`: DOM references, display updates, help modal, and win highlighting
-- `effects.js`: coin particles and screen flashes
-- `audio.js`: synthesized game sounds
+- `game-flow.js`: pure state-aware input routing and celebration timing helpers
+- `reels.js`: reel construction, buffered strip positioning, staged movement, and predetermined reel stops
+- `payouts.js`: pure matrix generation, line evaluation, tier classification, anticipation classification, and spin-result calculation
+- `ui.js`: DOM references, display updates, help modal, win highlighting, and celebration text
+- `effects.js`: cabinet effects, particles, flashes, anticipation state, and cancellable count-ups
+- `audio.js`: synthesized spin, stop, anticipation, and win-tier sounds
 - `bonuses.js`: extension hooks for free spins, modifiers, and bonus rounds
 - `persistence.js`: versioned browser-local state and pending-spin recovery
 - `statistics.js`: session-statistics tracking and future analytics hooks
 - `tools/simulate.mjs`: exact enumeration and seeded Monte Carlo validation
+- `tools/presentation-tests.mjs`: deterministic tier, anticipation, feature-flag, count-up, and skip-routing tests
 
 ## Included features
 
@@ -70,13 +75,68 @@ The JavaScript uses ordered classic scripts and a single `globalThis.CommuneFort
 - Weighted outcomes defined by the 24-stop reel maps
 - Tree of Life Wild substitution
 - Multiple simultaneous line wins
-- Sequential reel stopping, bounce, paylines, win highlights, particles, and synthesized sound
+- Authoritative outcomes generated before animation
+- Three-stage reel movement: acceleration, sustained speed, and controlled deceleration
+- Staggered reel stops with localized overshoot, flash, synthesized impact, and restrained cabinet response
+- Result-derived mild and strong third-reel anticipation
+- Win-tier presentation based on total-bet multiples
 - Browser-local saved balance and settings
-- Reload-safe settlement of interrupted spins
+- Reload-safe, exactly-once settlement of interrupted spins
 - Responsive desktop and mobile layout
+- Reduced-motion support
 - No runtime dependencies or external services
 
-## Math validation
+## Win tiers
+
+Win tiers use the final payout divided by the total bet. They do not change reel stops, paylines, payouts, hit frequency, wager math, or RTP.
+
+| Tier | Stable ID | Threshold |
+| --- | --- | ---: |
+| No Win | `none` | `0` |
+| Small Win | `small` | Greater than `0`, less than `5x` total bet |
+| Nice Win | `nice` | `5x` to less than `15x` total bet |
+| Big Win | `big` | `15x` to less than `40x` total bet |
+| Commune Jackpot | `jackpot` | `40x` total bet or greater |
+
+The current base machine cannot normally reach the Commune Jackpot threshold. Its full-stage Tree of Life presentation is implemented for future mathematical features without altering the current game.
+
+Nice, Big, and Commune Jackpot celebrations can be skipped by pressing the main **Spin/Skip** control, **Enter**, or **Space**. The skip input only ends the current celebration; it cannot also start the next spin. The real balance is settled once before presentation begins, and the count-up is display-only.
+
+## Better Spin Drama
+
+With `CONFIG.features.spinDrama` enabled, each reel uses a staged motion profile and stops against the predetermined target. Anticipation is derived from the authoritative result:
+
+- `none`: ordinary timing
+- `mild`: the first two reel targets create a plausible active-line continuation
+- `strong`: the result is a Nice Win or greater
+
+Anticipation may delay the third reel, dim the stage, intensify the final stop, and add a restrained pulse. It never changes stops or manufactures near misses. Set `CONFIG.features.spinDrama` to `false` to retain normal predetermined spinning without the anticipation layer.
+
+## Reduced motion
+
+The game respects `prefers-reduced-motion: reduce`. Reduced-motion mode shortens reel and celebration timing, minimizes reel bounce, removes cabinet shake and repeated pulses, suppresses confetti, and still communicates stops, tiers, winning lines, and the exact final payout.
+
+## Presentation configuration
+
+Important tuning fields are centralized in `js/config.js`:
+
+- `features.spinDrama` and `features.winTiers`
+- `winTiers.thresholds`
+- `winTiers.celebrationDurations`
+- `winTiers.countUpDurations`
+- `winTiers.countUpMinimum` and `winTiers.countUpMaximum`
+- `anticipation.delays`
+- `reelAnimation.durations`
+- `reelAnimation.cycles`
+- `reelAnimation.finalApproachDuration`
+- `reelAnimation.stopOvershootRatio`
+- `reelAnimation.settleDuration`
+- `reducedMotion.*Scale`
+- `characterAccentColors`
+
+The repeated strip buffer is validated when reels are built so every configured animation path retains additional full copies beyond the visible rows.
+
+## Math and presentation validation
 
 The current three-reel base game has only 13,824 possible stop combinations, so the simulator enumerates every outcome exactly.
 
@@ -84,10 +144,16 @@ The current three-reel base game has only 13,824 possible stop combinations, so 
 npm run simulate
 ```
 
-Run the configured base-RTP regression check:
+Run deterministic presentation tests and the configured base-RTP regression check:
 
 ```bash
 npm test
+```
+
+Run the exact RTP check directly:
+
+```bash
+node tools/simulate.mjs --check
 ```
 
 Run a seeded million-spin Monte Carlo comparison:
@@ -96,7 +162,7 @@ Run a seeded million-spin Monte Carlo comparison:
 npm run simulate:monte-carlo
 ```
 
-The current exact base-game RTP is approximately **82.0023%**, within the configured 82% to 83% base target. The final total RTP target, after wager-generated features, is 96% to 97%. See `docs/math-model.md`.
+The current exact base-game RTP is approximately **82.0023%**, within the configured 82% to 83% base target. Better Spin Drama and Win Tiers are presentation-only and do not contribute or remove RTP. The final total RTP target, after wager-generated features, is 96% to 97%. See `docs/math-model.md`.
 
 ## Replace the symbol art
 
