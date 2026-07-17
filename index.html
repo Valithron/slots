@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#081426" />
   <title>Commune Fortune</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="presentation.css" />
 </head>
 <body>
   <main class="app">
@@ -43,7 +44,7 @@
 
       <div class="stage">
         <div class="reel-frame" id="reelFrame">
-          <div class="reel-grid" id="reelGrid" aria-live="polite"></div>
+          <div class="reel-grid" id="reelGrid" aria-label="Three slot reels"></div>
           <div class="grid-shine"></div>
           <svg class="paylines" id="paylines" viewBox="0 0 300 300" preserveAspectRatio="none" aria-hidden="true">
             <polyline class="payline" data-line="0" points="8,50 150,50 292,50" style="color:#ff526f;stroke:currentColor" />
@@ -52,6 +53,17 @@
             <polyline class="payline" data-line="3" points="8,50 150,150 292,250" style="color:#ffb45d;stroke:currentColor" />
             <polyline class="payline" data-line="4" points="8,250 150,150 292,50" style="color:#d69cff;stroke:currentColor" />
           </svg>
+        </div>
+
+        <div class="celebration-layer" id="celebrationLayer" aria-hidden="true">
+          <div class="celebration-panel" id="celebrationPanel" role="group" aria-label="Win celebration">
+            <div class="celebration-radiance" aria-hidden="true"></div>
+            <img class="celebration-tree" src="assets/symbols/tree-of-life.svg" alt="" aria-hidden="true" />
+            <div class="celebration-title" id="celebrationTitle">Nice Win</div>
+            <div class="celebration-name" id="celebrationName" hidden></div>
+            <div class="celebration-amount"><span id="celebrationAmount">0</span><small>coins</small></div>
+            <div class="celebration-hint">Press Spin, Enter, or Space to skip</div>
+          </div>
         </div>
       </div>
 
@@ -64,7 +76,7 @@
           <button class="small-button" id="betUp" aria-label="Raise line bet">+</button>
         </div>
 
-        <button class="spin-button" id="spinButton">Spin</button>
+        <button class="spin-button" id="spinButton" aria-label="Spin the reels">Spin</button>
 
         <div class="utility-controls">
           <button class="small-button" id="soundButton"><span class="label">Sound </span><span id="soundState">On</span></button>
@@ -86,6 +98,7 @@
         <li>Three matching portraits on a line pay according to the table.</li>
         <li>The silver Tree of Life is Wild and substitutes for any portrait.</li>
         <li>Multiple winning lines are added together.</li>
+        <li>Nice Wins and larger celebrations can be skipped with Spin, Enter, or Space.</li>
         <li>Your fake coin balance and settings save automatically in this browser.</li>
       </ul>
       <div class="modal-actions"><button class="small-button" id="closeHelp">Close</button></div>
@@ -93,11 +106,13 @@
   </div>
 
   <div class="screen-flash" id="screenFlash"></div>
+  <div class="sr-only" id="celebrationAnnouncer" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <script src="js/config.js" defer></script>
   <script src="js/persistence.js" defer></script>
   <script src="js/statistics.js" defer></script>
   <script src="js/payouts.js" defer></script>
+  <script src="js/game-flow.js" defer></script>
   <script src="js/audio.js" defer></script>
   <script src="js/effects.js" defer></script>
   <script src="js/bonuses.js" defer></script>
