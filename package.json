@@ -1,12 +1,13 @@
 {
   "name": "commune-fortune",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Private-play slot machine with deterministic math validation.",
   "scripts": {
     "simulate": "node tools/simulate.mjs",
     "simulate:monte-carlo": "node tools/simulate.mjs --spins=1000000 --seed=20260717",
     "test:presentation": "node tools/presentation-tests.mjs",
-    "test": "node tools/presentation-tests.mjs && node tools/simulate.mjs --check"
+    "test:features": "node tools/feature-tests.mjs",
+    "test": "node tools/presentation-tests.mjs && node tools/feature-tests.mjs && node tools/simulate.mjs --check"
   }
 }

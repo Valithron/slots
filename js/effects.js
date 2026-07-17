@@ -1,6 +1,5 @@
 (() => {
   "use strict";
-
   const app = globalThis.CommuneFortune;
   const { CONFIG } = app;
 
@@ -14,20 +13,17 @@
     const originX = rect.left + rect.width / 2;
     const originY = rect.top + rect.height / 2;
     const particleCount = reducedMotion ? Math.min(8, count) : count;
-
     for (let index = 0; index < particleCount; index += 1) {
       const coin = document.createElement("div");
       coin.className = "coin-particle";
       coin.style.left = `${originX - 9}px`;
       coin.style.top = `${originY - 9}px`;
-
       const angle = Math.random() * Math.PI * 2;
       const distance = (90 + Math.random() * Math.min(globalThis.innerWidth || 360, 360)) * spread;
       coin.style.setProperty("--x", `${Math.cos(angle) * distance}px`);
       coin.style.setProperty("--y", `${Math.sin(angle) * distance + 100}px`);
       coin.style.setProperty("--r", `${(Math.random() * 900 - 450).toFixed(0)}deg`);
       coin.style.setProperty("--duration", `${800 + Math.random() * 750}ms`);
-
       document.body.appendChild(coin);
       globalThis.setTimeout(() => coin.remove(), 1750);
     }
@@ -37,7 +33,6 @@
     if (!originElement || reducedMotion) return;
     const rect = originElement.getBoundingClientRect();
     const particleCount = Math.min(72, count);
-
     for (let index = 0; index < particleCount; index += 1) {
       const piece = document.createElement("div");
       piece.className = "commune-confetti";
@@ -86,16 +81,10 @@
     const { machine, reelFrame, screenFlash, celebrationLayer } = elements;
     machine?.classList.add(`is-win-${tier}`);
     reelFrame?.classList.add(`win-tier-${tier}`);
-
     const particleCounts = { nice: 30, big: 52, jackpot: 72 };
-    burstCoins(particleCounts[tier] || 16, reelFrame, {
-      reducedMotion,
-      spread: tier === "jackpot" ? 1.35 : tier === "big" ? 1.18 : 1,
-    });
-
+    burstCoins(particleCounts[tier] || 16, reelFrame, { reducedMotion, spread: tier === "jackpot" ? 1.35 : tier === "big" ? 1.18 : 1 });
     if (tier === "big" || tier === "jackpot") flashScreen(screenFlash, tier);
     if (tier === "jackpot") burstConfetti(64, celebrationLayer || reelFrame, { reducedMotion });
-
     return () => {
       machine?.classList.remove(`is-win-${tier}`);
       reelFrame?.classList.remove(`win-tier-${tier}`);
@@ -104,11 +93,7 @@
 
   function wait(milliseconds, { signal } = {}) {
     return new Promise(resolve => {
-      if (signal?.aborted || milliseconds <= 0) {
-        resolve({ skipped: Boolean(signal?.aborted) });
-        return;
-      }
-
+      if (signal?.aborted || milliseconds <= 0) { resolve({ skipped: Boolean(signal?.aborted) }); return; }
       let settled = false;
       const finish = skipped => {
         if (settled) return;
@@ -131,7 +116,6 @@
       const startedAt = clock();
       let frameId = null;
       let settled = false;
-
       const finish = skipped => {
         if (settled) return;
         settled = true;
@@ -141,12 +125,7 @@
         resolve({ skipped });
       };
       const onAbort = () => finish(true);
-
-      if (signal?.aborted || duration <= 0) {
-        finish(Boolean(signal?.aborted));
-        return;
-      }
-
+      if (signal?.aborted || duration <= 0) { finish(Boolean(signal?.aborted)); return; }
       signal?.addEventListener("abort", onAbort, { once: true });
       const step = timestamp => {
         const progress = Math.min(1, (timestamp - startedAt) / duration);
@@ -159,6 +138,49 @@
     });
   }
 
+  async function presentExpandingWild({ elements, reducedMotion = false, signal }) {
+    const { machine, reelFrame, wildAwakeningOverlay, screenFlash } = elements;
+    if (!wildAwakeningOverlay) return;
+    machine?.classList.add("is-tree-awakening");
+    reelFrame?.classList.add("tree-awakening-active");
+    wildAwakeningOverlay.className = `wild-awakening-overlay is-visible ${reducedMotion ? "reduced" : "is-pulsing"}`;
+
+    if (reducedMotion) {
+      await wait(CONFIG.expandingWild.presentation.reducedMotionDuration, { signal });
+      wildAwakeningOverlay.classList.add("is-locked");
+    } else {
+      await wait(CONFIG.expandingWild.presentation.pulseDuration, { signal });
+      if (!signal?.aborted) {
+        wildAwakeningOverlay.classList.remove("is-pulsing");
+        wildAwakeningOverlay.classList.add("is-growing");
+        await wait(CONFIG.expandingWild.presentation.growthDuration, { signal });
+      }
+      wildAwakeningOverlay.classList.remove("is-pulsing", "is-growing");
+      wildAwakeningOverlay.classList.add("is-locked");
+      if (!signal?.aborted) {
+        flashScreen(screenFlash, "awakening");
+        await wait(CONFIG.expandingWild.presentation.lockDuration, { signal });
+      }
+    }
+
+    machine?.classList.remove("is-tree-awakening");
+    reelFrame?.classList.remove("tree-awakening-active");
+  }
+
+  async function presentCombination({ combinationWin, elements, reducedMotion = false, signal }) {
+    const fullCommune = combinationWin?.id === "full-commune";
+    elements.machine?.classList.add(fullCommune ? "is-full-commune" : "is-combination-win");
+    if (fullCommune) {
+      burstConfetti(28, elements.reelFrame, { reducedMotion });
+      flashScreen(elements.screenFlash, "combination");
+    }
+    const duration = reducedMotion
+      ? CONFIG.combinations.reducedMotionDuration
+      : fullCommune ? CONFIG.combinations.fullCommunePresentationDuration : CONFIG.combinations.presentationDuration;
+    await wait(duration, { signal });
+    elements.machine?.classList.remove("is-combination-win", "is-full-commune");
+  }
+
   app.effects = {
     prefersReducedMotion,
     burstCoins,
@@ -169,5 +191,7 @@
     startTierEffects,
     wait,
     countUp,
+    presentExpandingWild,
+    presentCombination,
   };
 })();
