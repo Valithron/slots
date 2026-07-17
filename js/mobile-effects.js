@@ -6,7 +6,6 @@
   const originalSetAnticipation = app.effects.setAnticipation;
   const originalStartTierEffects = app.effects.startTierEffects;
   const originalPresentCombination = app.effects.presentCombination;
-  const nativeAnimate = globalThis.Element?.prototype?.animate;
 
   function getSystemReducedPreference() {
     return Boolean(globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
@@ -84,83 +83,6 @@
     return profile;
   }
 
-  function parseTransformY(transform) {
-    if (!transform || transform === "none") return 0;
-    const direct = transform.match(/translate(?:3d|Y)?\([^,]*,?\s*(-?[\d.]+)px/i);
-    if (direct) return Number(direct[1]) || 0;
-    const matrix3d = transform.match(/^matrix3d\((.+)\)$/);
-    if (matrix3d) return Number(matrix3d[1].split(",")[13]) || 0;
-    const matrix = transform.match(/^matrix\((.+)\)$/);
-    if (matrix) return Number(matrix[1].split(",")[5]) || 0;
-    return 0;
-  }
-
-  function mobileReelAnimation(element, keyframes, options = {}) {
-    const frames = Array.from(keyframes || []);
-    const duration = Math.max(0, Number(options.duration) || 0);
-    const startY = parseTransformY(frames[0]?.transform || element.style.transform);
-    const endY = parseTransformY(frames.at(-1)?.transform || element.style.transform);
-    let frameId = null;
-    let settled = false;
-    let rejectFinished;
-    let resolveFinished;
-    const finished = new Promise((resolve, reject) => {
-      resolveFinished = resolve;
-      rejectFinished = reject;
-    });
-
-    element.style.transition = "none";
-    element.style.willChange = "auto";
-    element.style.transform = `translateY(${startY}px)`;
-
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      element.style.transform = `translateY(${endY}px)`;
-      resolveFinished();
-    };
-
-    if (duration === 0 || frames.length >= 3 && duration <= 180) {
-      frameId = globalThis.requestAnimationFrame?.(finish) ?? globalThis.setTimeout(finish, 0);
-    } else {
-      const startedAt = globalThis.performance?.now?.() ?? Date.now();
-      const step = timestamp => {
-        if (settled) return;
-        const progress = Math.min(1, Math.max(0, (timestamp - startedAt) / duration));
-        const eased = 1 - Math.pow(1 - progress, 3);
-        const y = startY + (endY - startY) * eased;
-        element.style.transform = `translateY(${y}px)`;
-        if (progress >= 1) finish();
-        else frameId = globalThis.requestAnimationFrame(step);
-      };
-      frameId = globalThis.requestAnimationFrame(step);
-    }
-
-    return {
-      finished,
-      cancel() {
-        if (settled) return;
-        settled = true;
-        if (frameId !== null) globalThis.cancelAnimationFrame?.(frameId);
-        const error = typeof DOMException === "function" ? new DOMException("Animation cancelled", "AbortError") : new Error("Animation cancelled");
-        rejectFinished(error);
-      },
-      play() {},
-      pause() {},
-    };
-  }
-
-  function installMobileReelAnimationShim() {
-    if (!globalThis.Element?.prototype || !nativeAnimate || globalThis.Element.prototype.__communeMobileAnimateInstalled) return;
-    Object.defineProperty(globalThis.Element.prototype, "__communeMobileAnimateInstalled", { value: true });
-    globalThis.Element.prototype.animate = function animate(keyframes, options) {
-      if (this.classList?.contains("reel-strip") && isMobileTuningActive()) {
-        return mobileReelAnimation(this, keyframes, options);
-      }
-      return nativeAnimate.call(this, keyframes, options);
-    };
-  }
-
   function reelImpact(machine, reelFrame, reelIndex, options = {}) {
     if (!machine) return;
     const profile = applyMotionClasses(machine, reelFrame, null, {
@@ -201,7 +123,6 @@
     return normalized;
   }
 
-  installMobileReelAnimationShim();
   applyMotionClasses(document.getElementById("machine"), document.getElementById("reelFrame"));
 
   app.effects.getSystemReducedPreference = getSystemReducedPreference;
