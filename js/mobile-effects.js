@@ -37,10 +37,23 @@
   function getTactileProfile(state = null, environment = {}) {
     const reduced = isReducedMotionActive(state, environment.systemReduced ?? getSystemReducedPreference());
     const mobile = isMobileTuningActive(environment);
+
+    if (mobile) {
+      return {
+        mode: reduced ? "reduced" : "full",
+        mobile: true,
+        cabinetMotion: false,
+        localizedMotion: false,
+        repeatedPulse: !reduced,
+        visibleImpact: true,
+        classDuration: reduced ? 150 : 190,
+      };
+    }
+
     if (reduced) {
       return {
         mode: "reduced",
-        mobile,
+        mobile: false,
         cabinetMotion: false,
         localizedMotion: true,
         repeatedPulse: false,
@@ -48,14 +61,15 @@
         classDuration: 180,
       };
     }
+
     return {
       mode: "full",
-      mobile,
+      mobile: false,
       cabinetMotion: true,
       localizedMotion: true,
       repeatedPulse: true,
       visibleImpact: true,
-      classDuration: mobile ? 300 : CONFIG.reelAnimation.impactClassDuration,
+      classDuration: CONFIG.reelAnimation.impactClassDuration,
     };
   }
 
