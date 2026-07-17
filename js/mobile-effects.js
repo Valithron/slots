@@ -9,26 +9,21 @@
     return Boolean(globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
   }
 
-  function getCurrentState() {
-    try {
-      return app.game?.getState?.() || app.persistence?.loadState?.() || { visualEffectsMode: "auto" };
-    } catch {
-      return { visualEffectsMode: "auto" };
+  function getVisualEffectsPreference(state = null) {
+    if (state && Object.hasOwn(state, "visualEffectsMode")) {
+      return app.visualEffectsSettings.normalizeVisualEffectsMode(state.visualEffectsMode);
     }
+    return app.visualEffectsSettings.getMode();
   }
 
-  function getVisualEffectsPreference(state = getCurrentState()) {
-    return app.visualEffectsSettings.normalizeVisualEffectsMode(state?.visualEffectsMode);
-  }
-
-  function getMotionMode(state = getCurrentState(), systemReduced = getSystemReducedPreference()) {
+  function getMotionMode(state = null, systemReduced = getSystemReducedPreference()) {
     const preference = getVisualEffectsPreference(state);
     if (preference === "full") return "full";
     if (preference === "reduced") return "reduced";
     return systemReduced ? "reduced" : "full";
   }
 
-  function isReducedMotionActive(state = getCurrentState(), systemReduced = getSystemReducedPreference()) {
+  function isReducedMotionActive(state = null, systemReduced = getSystemReducedPreference()) {
     return getMotionMode(state, systemReduced) === "reduced";
   }
 
@@ -39,7 +34,7 @@
     return width <= 768 || coarsePointer;
   }
 
-  function getTactileProfile(state = getCurrentState(), environment = {}) {
+  function getTactileProfile(state = null, environment = {}) {
     const reduced = isReducedMotionActive(state, environment.systemReduced ?? getSystemReducedPreference());
     const mobile = isMobileTuningActive(environment);
     if (reduced) {
@@ -64,7 +59,7 @@
     };
   }
 
-  function applyMotionClasses(machine, reelFrame, state = getCurrentState(), environment = {}) {
+  function applyMotionClasses(machine, reelFrame, state = null, environment = {}) {
     const profile = getTactileProfile(state, environment);
     [machine, reelFrame].forEach(element => {
       element?.classList.toggle("motion-reduced", profile.mode === "reduced");
@@ -76,11 +71,9 @@
 
   function reelImpact(machine, reelFrame, reelIndex, options = {}) {
     if (!machine) return;
-    const state = getCurrentState();
-    const environment = {
+    const profile = applyMotionClasses(machine, reelFrame, null, {
       systemReduced: options.reducedMotion ?? getSystemReducedPreference(),
-    };
-    const profile = applyMotionClasses(machine, reelFrame, state, environment);
+    });
     const cabinetClass = reelIndex === 2 ? "reel-impact-strong" : "reel-impact";
     const frameClass = `impact-reel-${reelIndex + 1}`;
 
@@ -103,11 +96,10 @@
     machine?.classList.toggle("anticipation-static", active && !profile.repeatedPulse);
   }
 
-  function setVisualEffectsMode(state, mode) {
-    if (!state || typeof state !== "object") return "auto";
-    state.visualEffectsMode = app.visualEffectsSettings.normalizeVisualEffectsMode(mode);
-    app.persistence.saveState(state);
-    return state.visualEffectsMode;
+  function setVisualEffectsMode(mode) {
+    const normalized = app.visualEffectsSettings.setMode(mode);
+    applyMotionClasses(document.getElementById("machine"), document.getElementById("reelFrame"));
+    return normalized;
   }
 
   app.effects.getSystemReducedPreference = getSystemReducedPreference;
