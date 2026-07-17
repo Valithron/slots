@@ -1,0 +1,80 @@
+name: Apply slot hotfix
+
+on:
+  push:
+    paths:
+      - ".github/workflows/apply-slot-hotfix.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch reel strip and help copy
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          path = Path("index.html")
+          text = path.read_text()
+
+          help_line = '      <p>To replace the placeholder symbols, overwrite the files in <strong>assets/symbols</strong> while keeping the same filenames.</p>\n'
+          if help_line not in text:
+              raise SystemExit("Expected help text was not found")
+          text = text.replace(help_line, "", 1)
+
+          old_constants = '''    const STORAGE_KEY = "commune-fortune-v1";
+    const REPEAT_COUNT = 7;
+    const BASE_COPY = 2;
+'''
+          new_constants = '''    const STORAGE_KEY = "commune-fortune-v1";
+    const BASE_COPY = 2;
+    const MAX_SPIN_CYCLES = 3 + CONFIG.reels.length - 1;
+    // Keep one full buffer copy after the furthest animated stop so all three visible rows stay populated.
+    const REPEAT_COUNT = BASE_COPY + MAX_SPIN_CYCLES + 2;
+'''
+          if old_constants not in text:
+              raise SystemExit("Expected reel constants were not found")
+          text = text.replace(old_constants, new_constants, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Validate JavaScript and reel bounds
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          import re
+
+          text = Path("index.html").read_text()
+          match = re.search(r'<script>\s*(.*?)\s*</script>', text, re.S)
+          if not match:
+              raise SystemExit("Script block not found")
+          Path("/tmp/slots-script.js").write_text(match.group(1))
+
+          base_copy = 2
+          reel_count = 3
+          max_spin_cycles = 3 + reel_count - 1
+          repeat_count = base_copy + max_spin_cycles + 2
+          reel_length = 24
+          for reel_index in range(reel_count):
+              cycles = 3 + reel_index
+              last_visible_cell = (base_copy + cycles) * reel_length + (reel_length - 1) + 2
+              if last_visible_cell >= repeat_count * reel_length:
+                  raise SystemExit(f"Reel {reel_index + 1} exceeds generated strip")
+          PY
+          node --check /tmp/slots-script.js
+          ! grep -q "To replace the placeholder symbols" index.html
+
+      - name: Commit hotfix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/apply-slot-hotfix.yml
+          git add index.html
+          git commit -m "Fix third reel rendering and help copy [skip ci]"
+          git push
