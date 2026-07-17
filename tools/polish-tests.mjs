@@ -14,7 +14,7 @@ globalThis.localStorage = {
 globalThis.matchMedia = query => ({
   matches: query.includes("prefers-reduced-motion") ? systemReduced : query.includes("pointer: coarse") ? coarsePointer : false,
 });
-globalThis.document = { getElementById: () => null };
+globalThis.document = { getElementById: () => null, documentElement: null };
 
 await import("../js/config.js");
 await import("../js/combination-clarity-config.js");
@@ -29,6 +29,7 @@ await import("../js/effects.js");
 await import("../js/mobile-effects.js");
 
 const mobileCss = await readFile(new URL("../mobile-effects.css", import.meta.url), "utf8");
+const mobileJs = await readFile(new URL("../js/mobile-effects.js", import.meta.url), "utf8");
 const app = globalThis.CommuneFortune;
 const { CONFIG, payouts, persistence, effects, combinationClarity } = app;
 const state = overrides => ({
@@ -87,12 +88,21 @@ function visualEffectsModes() {
   assert.equal(fullMobileProfile.visibleImpact, true);
   assert.equal(fullMobileProfile.cabinetMotion, false);
   assert.equal(fullMobileProfile.localizedMotion, false);
+  assert.equal(fullMobileProfile.repeatedPulse, false);
 }
 
 function mobileCompositingSafety() {
-  assert.match(mobileCss, /\.machine\.tactile-mobile \.reel\.is-stop-impact \{[\s\S]*?animation: none !important;[\s\S]*?transform: none !important;[\s\S]*?filter: none !important;/);
-  assert.match(mobileCss, /\.machine\.tactile-mobile\.reel-impact,[\s\S]*?animation: none !important;[\s\S]*?transform: none !important;/);
-  assert.match(mobileCss, /@keyframes mobileSafeReelFlash/);
+  assert.match(mobileCss, /\.mobile-stable-rendering \.reel\.is-stop-impact[\s\S]*?animation: none !important;[\s\S]*?transform: none !important;[\s\S]*?filter: none !important;/);
+  assert.match(mobileCss, /\.mobile-stable-rendering \.machine\.reel-impact[\s\S]*?animation: none !important;[\s\S]*?transform: none !important;/);
+  assert.match(mobileCss, /@media \(max-width: 768px\), \(pointer: coarse\)/);
+  assert.match(mobileCss, /\.celebration-layer::before[\s\S]*?backdrop-filter: none !important;/);
+  assert.match(mobileCss, /\.commune-confetti,[\s\S]*?\.screen-flash,[\s\S]*?display: none !important;/);
+  assert.match(mobileCss, /\.reel-strip[\s\S]*?will-change: auto !important;/);
+  assert.match(mobileJs, /function mobileReelAnimation/);
+  assert.match(mobileJs, /classList\?\.contains\("reel-strip"\)/);
+  assert.match(mobileJs, /frames\.length >= 3 && duration <= 180/);
+  assert.match(mobileJs, /originalStartTierEffects\(\{ \.\.\.options, reducedMotion: true \}\)/);
+  assert.match(mobileJs, /originalPresentCombination\(\{ \.\.\.options, reducedMotion: true \}\)/);
   assert.doesNotMatch(mobileCss, /@keyframes mobileLocalizedReelImpact/);
   assert.doesNotMatch(mobileCss, /@keyframes mobileFrameImpact/);
   assert.doesNotMatch(mobileCss, /@keyframes mobileCabinetImpact/);
