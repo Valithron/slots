@@ -1,12 +1,12 @@
 (() => {
   "use strict";
 
-  const app = window.CommuneFortune;
+  const app = globalThis.CommuneFortune;
   const { CONFIG } = app;
   const { repeatCount, baseCopy } = CONFIG.reelAnimation;
 
   function createReelController({ reelGrid, playTick, playReelStop }) {
-    let currentTopStops = [0, 0, 0];
+    let currentTopStops = CONFIG.reels.map(() => 0);
     const reelElements = [];
 
     function getCellSize() {
@@ -68,21 +68,12 @@
       });
     }
 
-    function randomStops() {
-      return CONFIG.reels.map(reel => Math.floor(Math.random() * reel.length));
+    function randomStops(rng = Math.random) {
+      return CONFIG.reels.map(reel => Math.floor(rng() * reel.length));
     }
 
     function getVisibleMatrix() {
-      const matrix = [[], [], []];
-
-      currentTopStops.forEach((topStop, reelIndex) => {
-        const reel = CONFIG.reels[reelIndex];
-        for (let row = 0; row < 3; row += 1) {
-          matrix[row][reelIndex] = reel[(topStop + row) % reel.length];
-        }
-      });
-
-      return matrix;
+      return app.payouts.matrixFromStops(currentTopStops);
     }
 
     function animateReelTo(reelIndex, targetStop, duration) {
@@ -123,6 +114,10 @@
     }
 
     async function spinTo(targetStops) {
+      if (!Array.isArray(targetStops) || targetStops.length !== CONFIG.reels.length) {
+        throw new Error(`Expected ${CONFIG.reels.length} target stops.`);
+      }
+
       const promises = targetStops.map((stop, index) => {
         return animateReelTo(index, stop, CONFIG.reelAnimation.durations[index]);
       });
