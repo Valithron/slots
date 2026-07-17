@@ -102,7 +102,7 @@ function boundaryRules() {
   const original = [
     ["STR", "GAB", "CYD"],
     ["ASH", "TOL", "RYN"],
-    ["KEN", "COP", "GAB"],
+    ["ASH", "COP", "GAB"],
   ];
   const awakened = original.map(row => [...row]);
   awakened[0][1] = "TOL";
