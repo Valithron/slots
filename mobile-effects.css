@@ -58,11 +58,17 @@
 
 /*
  * iOS Safari, iOS Chrome, and many in-app browsers share WebKit. Animating
- * transform/filter on these clipped reel ancestors while the long reel strip
- * is independently transform-animated can blank or crop the composited layer.
- * Mobile tactile feedback is therefore light-only: the reel viewport, frame,
- * cabinet, and strip geometry remain completely stationary.
+ * transform/filter on clipped reel ancestors while the long reel strip is
+ * independently transform-animated can blank or crop the composited layer.
+ * Mobile tactile feedback is therefore light-only: reel geometry remains
+ * stationary and only small overlay layers animate.
  */
+.machine.tactile-mobile .reel,
+.machine.tactile-mobile .reel-strip {
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
 .machine.tactile-mobile .reel.is-stop-impact {
   animation: none !important;
   transform: none !important;
