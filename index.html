@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="feature-presentation.css" />
   <link rel="stylesheet" href="fortune.css" />
   <link rel="stylesheet" href="reactions-free-spins.css" />
+  <link rel="stylesheet" href="mobile-effects.css" />
 </head>
 <body>
   <main class="app">
@@ -155,7 +156,8 @@
         <li>The same natural Three Trees event during the feature retriggers two spins, up to twenty total awarded spins.</li>
         <li>Free spins use the triggering total bet. They cost no coins and do not build, consume, or multiply with Fortune.</li>
         <li>Tree Awakening, Commune combinations, all five paylines, character reactions, and manual reel stopping remain active during free spins.</li>
-        <li>The middle row is the Commune Line. Named trios require the exact left-to-right order shown below.</li>
+        <li>The middle row is the Commune Line. Named combinations trigger when the required three symbols appear in any order across that row.</li>
+        <li>Top rows, bottom rows, vertical columns, and diagonals do not trigger named combinations.</li>
         <li>Full Commune requires all seven members in the grid and the Tree in the exact center cell.</li>
         <li>Every paid spin adds Fortune. Natural wins and Commune combinations add more.</li>
         <li>At 100 Fortune, the next paid spin becomes a Fortune Spin and multiplies the complete wager-generated win by 1.5×, rounded down.</li>
@@ -166,6 +168,16 @@
         <li>Nice Wins and larger presentations can be skipped with Spin, Enter, or Space.</li>
         <li>Your fake coin balance, Fortune Meter, pending result, free-spin session, feature rolls, and settings save automatically in this browser.</li>
       </ul>
+      <div class="visual-effects-setting">
+        <label for="visualEffectsMode">Visual effects
+          <small>Auto follows your device motion preference. Full keeps tactile motion. Reduced keeps brief impact flashes with minimal movement.</small>
+        </label>
+        <select id="visualEffectsMode" aria-label="Visual effects mode">
+          <option value="auto">Auto</option>
+          <option value="full">Full</option>
+          <option value="reduced">Reduced</option>
+        </select>
+      </div>
       <h3 class="combination-reference-heading">Commune combinations</h3>
       <div class="combination-reference" id="combinationReference"></div>
       <div class="modal-actions"><button class="small-button" id="closeHelp">Close</button></div>
@@ -179,17 +191,22 @@
   <div class="sr-only" id="freeSpinAnnouncer" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <script src="js/config.js" defer></script>
+  <script src="js/combination-clarity-config.js" defer></script>
   <script src="js/reactions.js" defer></script>
   <script src="js/free-spins.js" defer></script>
   <script src="js/persistence.js" defer></script>
+  <script src="js/visual-effects-settings.js" defer></script>
   <script src="js/statistics.js" defer></script>
   <script src="js/payouts.js" defer></script>
+  <script src="js/combination-clarity-payouts.js" defer></script>
   <script src="js/game-flow.js" defer></script>
   <script src="js/audio.js" defer></script>
   <script src="js/effects.js" defer></script>
+  <script src="js/mobile-effects.js" defer></script>
   <script src="js/bonuses.js" defer></script>
   <script src="js/reels.js" defer></script>
   <script src="js/ui.js" defer></script>
+  <script src="js/clarity-ui.js" defer></script>
   <script src="js/reactions-free-spins-ui.js" defer></script>
   <script src="js/game-engine.js" defer></script>
 </body>
