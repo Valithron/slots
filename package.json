@@ -1,16 +1,16 @@
 {
   "name": "commune-fortune",
-  "version": "0.7.0",
+  "version": "0.6.1",
   "private": true,
   "type": "module",
-  "description": "A private, static slot-style game with authoritative math, tactile visual modes, character reactions, and persistent Commune Free Spins.",
+  "description": "A private static slot-style game with authoritative math, mobile-safe tactile effects, character reactions, and persistent Commune Free Spins.",
   "scripts": {
-    "test": "node tools/feature-tests.mjs && node tools/presentation-tests.mjs && node tools/polish-tests.mjs && node tools/simulate-polish.mjs --check",
+    "test": "node tools/feature-tests.mjs && node tools/presentation-tests.mjs && node tools/polish-tests.mjs && node tools/simulate.mjs --check",
     "test:features": "node tools/feature-tests.mjs",
     "test:presentation": "node tools/presentation-tests.mjs",
     "test:polish": "node tools/polish-tests.mjs",
-    "simulate": "node tools/simulate-polish.mjs",
-    "simulate:without-free-spins": "node tools/simulate-polish.mjs --free-spins=off",
-    "simulate:with-free-spins": "node tools/simulate-polish.mjs --free-spins=on"
+    "simulate": "node tools/simulate.mjs",
+    "simulate:without-free-spins": "node tools/simulate.mjs --free-spins=off",
+    "simulate:with-free-spins": "node tools/simulate.mjs --free-spins=on"
   }
 }
