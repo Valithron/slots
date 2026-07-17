@@ -1,10 +1,45 @@
 (() => {
   "use strict";
 
-  const app = window.CommuneFortune = window.CommuneFortune || {};
+  const app = globalThis.CommuneFortune = globalThis.CommuneFortune || {};
+
+  const GAME_STATES = Object.freeze({
+    IDLE: "idle",
+    SPINNING: "spinning",
+    STOPPING: "stopping",
+    RESOLVING: "resolving",
+    CELEBRATING: "celebrating",
+    BONUS: "bonus",
+    FREE_SPINS: "free-spins",
+    RISK_GAME: "risk-game",
+  });
+
+  const FEATURES = Object.freeze({
+    spinDrama: false,
+    winTiers: false,
+    characterAnimations: false,
+    expandingWilds: false,
+    scatters: false,
+    freeSpins: false,
+    momentumMeter: false,
+    dailyRewards: false,
+    advancedAudio: false,
+    manualStops: false,
+    riskGame: false,
+    mysteryModifiers: false,
+    combinationBonuses: false,
+    secretEvents: false,
+  });
 
   app.CONFIG = {
+    schemaVersion: 2,
     startingCoins: 1000,
+    rowCount: 3,
+    rtpTargets: {
+      base: { minimum: 0.82, maximum: 0.83 },
+      total: { minimum: 0.96, maximum: 0.97 },
+    },
+    features: FEATURES,
     paylines: [
       [0, 0, 0],
       [1, 1, 1],
@@ -14,7 +49,7 @@
     ],
     lineBets: [1, 2, 5, 10],
     symbols: {
-      CYD: { name: "Cydney", payout: 10, image: "assets/symbols/cydney.svg" },
+      CYD: { name: "Cydney", payout: 11, image: "assets/symbols/cydney.svg" },
       GAB: { name: "Gabi", payout: 8, image: "assets/symbols/gabi.svg" },
       KEN: { name: "Kenly", payout: 8, image: "assets/symbols/kenly.svg" },
       ASH: { name: "Ashley", payout: 12, image: "assets/symbols/ashley.svg" },
@@ -37,7 +72,9 @@
     paytableOrder: ["KEN", "GAB", "CYD", "ASH", "COP", "RYN", "STR", "TOL"],
   };
 
+  app.GAME_STATES = GAME_STATES;
   app.constants = {
-    storageKey: "commune-fortune-v1",
+    storageKey: "commune-fortune-v2",
+    legacyStorageKeys: ["commune-fortune-v1"],
   };
 })();
