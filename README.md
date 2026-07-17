@@ -8,74 +8,66 @@ Commune Fortune is a private, static 3-by-3 slot-style game built with plain HTM
 - Authoritative predetermined spin results
 - Reload-safe, exactly-once settlement
 - Better Spin Drama and manual left-to-right reel stopping
+- Auto, Full, and Reduced visual-effects modes
+- Mobile-tuned reel-stop and anticipation feedback
 - Small, Nice, Big, and Commune Jackpot win tiers
 - Tree of Life Wild and Tree Awakening
-- Named Commune combinations and Full Commune
+- Any-order named Commune Line combinations and Full Commune
 - Fortune Meter with a 1.5x charged paid spin
 - Character Reaction Framework using all seven current portraits
 - Commune Free Spins with retriggers, locked bets, persistence, and MVP summary
 - Synthesized Web Audio cues
 - Exact weighted simulator and automated regression tests
 
-## Character Reaction Framework
+## Visual effects modes
 
-Reaction presentation is centralized in `CONFIG.characterPresentation`.
-
-Each member has:
-
-```js
-{
-  name: "Sterling",
-  base: "assets/symbols/sterling.svg",
-  nice: null,
-  big: null,
-  accent: "#d3d8e8"
-}
-```
-
-All portrait URLs pass through one helper:
-
-```js
-versionAssetUrl(path, CONFIG.characterPresentation.assetVersion)
-```
-
-This appends a version query so same-filename portrait uploads do not remain stale in browser or Cloudflare caches.
-
-The fallback order is:
+The Help panel includes a local visual-effects preference:
 
 ```text
-requested reaction asset
-then current base portrait
-then generic Tree of Life presentation
+Auto
+Full
+Reduced
 ```
 
-Missing optional reaction assets never create a broken presentation. No alternate portraits are required in this release.
+- **Auto** follows the device or browser `prefers-reduced-motion` setting.
+- **Full** keeps the complete tactile presentation even when the system requests reduced motion.
+- **Reduced** removes cabinet shake and repeated pulsing while retaining a short reel flash, brightness pop, and tiny localized impact.
 
-Pure reaction selection gives priority to Full Commune, named combinations, a unique dominant line winner, tied dominant winners, Tree-only wins, and finally no reaction. Ties remain group reactions rather than choosing an arbitrary person.
+The preference is saved in browser state as:
 
-During free spins, reactions use a shorter compact mode. The final summary uses ordinary line-win attribution to select a unique MVP, tied group, Tree MVP, or neutral Commune result.
+```js
+visualEffectsMode: "auto" // "auto" | "full" | "reduced"
+```
+
+All reduced-motion decisions route through `app.effects.getMotionMode(state)` and `app.effects.isReducedMotionActive(state)`. Mobile tuning activates at 768 pixels or narrower or when a coarse pointer is reported. It changes presentation intensity only and has **0.0000% RTP effect**.
+
+## Commune Line combinations
+
+The dedicated Commune Line remains the middle row only. Named combinations trigger when their required three symbols appear in **any order** across that row.
+
+They do not trigger on the top row, bottom row, vertical columns, diagonals, or other paylines. Combination detection always uses `originalMatrix`, so Tree Awakening cannot manufacture a combination.
+
+| Combination | Required symbols | Award |
+| --- | --- | ---: |
+| KPs | Sterling, Cydney, Tree | 2× line bet |
+| Walls | Ryan, Gabi, Tree | 2× line bet |
+| Jaaps | Kenly, Cooper, Tree | 2× line bet |
+| Brotherhood | Cooper, Sterling, Ryan | 3× line bet |
+| Wives’ Circle | Kenly, Gabi, Cydney | 1× line bet |
+| Household | Ashley, Sterling, Cydney | 2× line bet |
+| Full Commune | All seven members visible and Tree in center | 5× total bet |
+
+Full Commune remains a separate grid-wide special case and suppresses the lesser named combinations.
+
+## Character Reaction Framework
+
+Reaction presentation is centralized in `CONFIG.characterPresentation`. All portrait URLs pass through `versionAssetUrl`, and missing optional reaction variants fall back to the current base portrait and then to the Tree of Life.
+
+Pure reaction selection gives priority to Full Commune, named combinations, a unique dominant line winner, tied dominant winners, Tree-only wins, and finally no reaction. During free spins, reactions use a shorter compact mode. The final summary uses ordinary line-win attribution to select a unique MVP, tied group, Tree MVP, or neutral Commune result.
 
 ## Commune Free Spins
 
-### Trigger
-
-A paid spin triggers four free spins when the natural visible `originalMatrix` contains at least one Tree of Life on each reel:
-
-```text
-reel 1 has a Tree
-and reel 2 has a Tree
-and reel 3 has a Tree
-```
-
-Tree Awakening uses `resolvedMatrix` for line evaluation but cannot manufacture the free-spin trigger. The current strips produce the Three Trees event exactly once per 64 paid spins on average.
-
-### Retrigger
-
-The same natural Three Trees event during a free spin awards two additional spins. Retrigger spins are applied after the current free spin settles. A session may award no more than twenty total spins.
-
-### Locked bet and Fortune interaction
-
-Free spins use the line-bet index and total reference bet from the triggering paid spin.
+A paid spin triggers four free spins when the natural visible `originalMatrix` contains at least one Tree of Life on each reel. The same natural Three Trees event during a free spin awards two additional spins, with a maximum of twenty total awarded spins.
 
 Free spins:
 
@@ -90,114 +82,73 @@ Free spins:
 - do not receive the 1.5x Fortune multiplier
 - do not permit bet adjustment or Refill
 
-A Fortune charge earned by the triggering paid spin remains stored for the next paid spin after the feature.
+The triggering line bet and reference total bet remain locked for the entire feature.
 
-## Authoritative result model
+## Authoritative result and recovery model
 
-Every result stores explicit classification:
+Every result stores explicit paid/free classification, coin cost, reference bet, target stops, original and resolved matrices, feature rolls, transformations, line wins, combination wins, modifiers, trigger data, and settlement status before reel animation begins.
 
-```js
-{
-  spinType: "paid", // or "free"
-  coinCost: 5,
-  referenceBet: 5
-}
-```
-
-`referenceBet` drives payout scaling, tier classification, and payout multiples. `coinCost` drives balance deductions, paid-wager statistics, and Fortune eligibility. Free spins therefore do not appear as extra paid wagers.
-
-Trigger data is saved before reel animation:
-
-```js
-{
-  freeSpinTrigger: {
-    triggered: true,
-    type: "three-trees",
-    awardedSpins: 4,
-    treeCells: [{ row: 0, reel: 0 }, { row: 2, reel: 1 }, { row: 1, reel: 2 }]
-  }
-}
-```
-
-## Persistence and recovery
-
-The browser save includes the free-spin session, pending result, original and resolved matrices, feature rolls, trigger cells, settled presentation result, locked bet, accumulated win, retriggers, contribution totals, and summary status.
-
-The session uses these statuses:
-
-```text
-intro
-ready
-spinning
-presenting
-complete
-summary
-```
-
-Animation-frame progress is not stored. On reload, the authoritative result is restored and settled exactly once. Recovery handles refreshes during the trigger intro, free-spin motion, settlement, reaction, retrigger, and final summary without rerolls, lost spins, duplicated credits, duplicated retriggers, or Fortune changes.
+Animation progress is not persisted. On reload, the authoritative result is restored and settled exactly once. Recovery handles refreshes during reel movement, trigger intro, free-spin settlement, reaction, retrigger, and summary without rerolls, lost spins, duplicated credits, duplicated retriggers, or Fortune changes.
 
 ## Exact math
 
-At line bet 1 and total bet 5:
+At line bet 1 and total bet 5, the production simulator enumerates all 55,296 weighted stop-and-Tree-roll outcomes, solves the Fortune stationary distribution, and solves the bounded free-spin transition model exactly.
 
-| Metric | Exact result |
-| --- | ---: |
-| Current RTP without free spins | 87.8188% |
-| Three Trees paid trigger | 1.5625% |
-| Average paid spins between triggers | 64.0000 |
-| Incremental free-spin RTP | 5.6000% |
-| Final combined RTP | 93.4188% |
-| Average free spins per feature | 4.129032 |
-| Average retriggers per feature | 0.064516 |
-| Features with at least one retrigger | 6.1050% |
-| Average feature payout | 17.919952 coins |
-| Zero-pay feature frequency | 23.5401% |
-| Maximum feature payout | 2,020 coins |
-| Maximum trigger-plus-feature payout | 2,171 coins |
-| Reaction framework RTP effect | 0.0000% |
+| Metric | Previous exact-order model | New any-order model |
+| --- | ---: | ---: |
+| Base line RTP | 82.0023% | 82.0023% |
+| Tree Awakening increment | 2.6215% | 2.6215% |
+| Total combination RTP | 2.1759% | 2.7980% |
+| Named combination RTP | 1.5972% | 2.2193% |
+| Full Commune RTP | 0.5787% | 0.5787% |
+| Fortune increment | 1.0190% | 1.1016% |
+| RTP before free spins | 87.8188% | 88.5234% |
+| Free-spin increment | 5.6000% | 5.6401% |
+| Final combined RTP | 93.4188% | 94.1636% |
+| Total RTP change | — | +0.7448 percentage points |
+| Visual-effects RTP effect | 0.0000% | 0.0000% |
 
-See `docs/math-model.md` for the weighted transition model and full distributions.
+### Exact combination trigger frequencies
+
+| Combination | Previous | New |
+| --- | ---: | ---: |
+| KPs | 0.1157% | 0.6944% |
+| Walls | 0.1157% | 0.6076% |
+| Jaaps | 0.1736% | 1.0489% |
+| Brotherhood | 0.0868% | 0.5787% |
+| Wives’ Circle | 0.4630% | 2.3438% |
+| Household | 0.1736% | 1.1574% |
+| Full Commune | 0.1157% | 0.1157% |
+
+The new 2.7980% combination contribution is inside the locked 2.5% to 3.1% target.
 
 ## Commands
 
 ```bash
 npm test
+npm run test:features
+npm run test:presentation
+npm run test:polish
 npm run simulate
 npm run simulate:without-free-spins
 npm run simulate:with-free-spins
-node tools/simulate.mjs --check
-node tools/simulate.mjs --json
+node tools/simulate-polish.mjs --check
+node tools/simulate-polish.mjs --json
 ```
 
-The simulator enumerates all 55,296 weighted stop-and-Tree-roll outcomes, solves the Fortune stationary distribution, and then solves the bounded free-spin transition model exactly.
+The simulator reports the previous and current combination models, named and Full Commune contributions, total RTP, RTP delta, and every combination trigger frequency.
 
-## Feature flags
+## Feature flags and isolation
 
-The two new systems are independent:
+The existing feature flags remain independent. Manual stop timing, reactions, audio, and visual effects consume authoritative results but do not participate in result generation.
 
-```js
-CONFIG.features.characterReactions
-CONFIG.features.freeSpins
-```
-
-Supported configurations:
-
-- reactions off, free spins off
-- reactions on, free spins off
-- reactions off, free spins on
-- reactions on, free spins on
-
-With free spins disabled, the current exact RTP remains 87.8188%. Reactions always have zero mathematical effect.
-
-## Accessibility and reduced motion
-
-Reaction and feature panels use meaningful labels, single final announcements, keyboard Skip, non-color text labels, decorative-image hiding, and no focus trap. Reduced motion replaces repeated movement with short fades, removes reaction pulsing and cabinet movement, shortens free-spin reactions, and keeps Skip behavior intact.
+Automated tests preserve base math, Tree Awakening, Fortune, free spins, manual stopping, win tiers, exactly-once settlement, reload recovery, and feature-flag isolation.
 
 ## Known limitations and deferred work
 
-- Alternate reaction portraits, frame animations, and video expressions are deferred. The fallback framework is ready for them.
-- Ally Selection and all seven ally abilities are deferred.
+- Alternate reaction portraits, frame animations, and video expressions remain deferred.
+- Ally Selection and all seven ally abilities remain deferred.
 - No Scatter symbol is used. The existing Tree performs both Wild and trigger roles.
-- Mystery modifiers, risk-or-collect, daily rewards, and secret events are deferred.
+- Mystery modifiers, risk-or-collect, daily rewards, and secret events remain deferred.
 - Audio is synthesized. No imported audio is included.
-- The project remains local-browser persistence only.
+- Persistence remains local to the current browser.
