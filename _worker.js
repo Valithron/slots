@@ -30,6 +30,8 @@ export default {
 
     const headers = new Headers(response.headers);
     headers.delete("content-length");
+    headers.delete("content-encoding");
+    headers.delete("etag");
 
     return new Response(html, {
       status: response.status,
