@@ -1,212 +1,203 @@
 # Commune Fortune
 
-A private-play 3 x 3 slot machine using fake coins only. The game is a static HTML, CSS, and JavaScript site with no framework, backend, database, bundler, runtime dependency, account, purchase, or cash-out system.
+Commune Fortune is a private, static 3-by-3 slot-style game built with plain HTML, CSS, and JavaScript. It uses fake coins only. There is no backend, framework, build process, purchase flow, cash-out, or runtime dependency.
 
-## Run it
+## Current feature set
 
-Open `index.html` in a modern browser. A small local static server is recommended:
+- Five fixed paylines on three 24-stop reels
+- Authoritative predetermined spin results
+- Reload-safe, exactly-once settlement
+- Better Spin Drama and manual left-to-right reel stopping
+- Small, Nice, Big, and Commune Jackpot win tiers
+- Tree of Life Wild and Tree Awakening
+- Named Commune combinations and Full Commune
+- Fortune Meter with a 1.5x charged paid spin
+- Character Reaction Framework using all seven current portraits
+- Commune Free Spins with retriggers, locked bets, persistence, and MVP summary
+- Synthesized Web Audio cues
+- Exact weighted simulator and automated regression tests
 
-```bash
-python -m http.server 8080
+## Character Reaction Framework
+
+Reaction presentation is centralized in `CONFIG.characterPresentation`.
+
+Each member has:
+
+```js
+{
+  name: "Sterling",
+  base: "assets/symbols/sterling.svg",
+  nice: null,
+  big: null,
+  accent: "#d3d8e8"
+}
 ```
 
-Then visit `http://localhost:8080`.
+All portrait URLs pass through one helper:
 
-## Current systems
+```js
+versionAssetUrl(path, CONFIG.characterPresentation.assetVersion)
+```
 
-### Tree of Life Awakening Wild
+This appends a version query so same-filename portrait uploads do not remain stale in browser or Cloudflare caches.
 
-The Tree remains the ordinary substituting Wild. When it naturally lands in the exact center cell, one predetermined four-outcome roll is stored in the authoritative result. Roll `0` awakens the Tree and resolves all three visible cells on the middle reel as Wilds. `originalMatrix` remains immutable and `resolvedMatrix` is used for line evaluation.
+The fallback order is:
 
-### Commune combinations
+```text
+requested reaction asset
+then current base portrait
+then generic Tree of Life presentation
+```
 
-The middle row is the Commune Line. Named trios require exact left-to-right order and are detected from `originalMatrix`, so an awakened Tree cannot manufacture a combination.
+Missing optional reaction assets never create a broken presentation. No alternate portraits are required in this release.
 
-| Combination | Exact sequence | Award |
-| --- | --- | ---: |
-| KPs | Sterling, Cydney, Tree | 8 x line bet |
-| Walls | Ryan, Gabi, Tree | 8 x line bet |
-| Jaaps | Kenly, Cooper, Tree | 8 x line bet |
-| Brotherhood | Cooper, Sterling, Ryan | 12 x line bet |
-| Wives’ Circle | Kenly, Gabi, Cydney | 5 x line bet |
-| Household | Ashley, Sterling, Cydney | 8 x line bet |
-| Full Commune | All seven members anywhere, plus Tree in the exact center | 5 x total bet |
+Pure reaction selection gives priority to Full Commune, named combinations, a unique dominant line winner, tied dominant winners, Tree-only wins, and finally no reaction. Ties remain group reactions rather than choosing an arbitrary person.
 
-Full Commune has priority over lesser combinations. Ordinary paylines and Tree Awakening may still stack.
+During free spins, reactions use a shorter compact mode. The final summary uses ordinary line-win attribution to select a unique MVP, tied group, Tree MVP, or neutral Commune result.
 
-### Fortune Meter and Fortune Spins
+## Commune Free Spins
 
-Every paid spin advances a persistent 100-point Fortune Meter. Gains stack:
+### Trigger
 
-| Event | Fortune gained |
+A paid spin triggers four free spins when the natural visible `originalMatrix` contains at least one Tree of Life on each reel:
+
+```text
+reel 1 has a Tree
+and reel 2 has a Tree
+and reel 3 has a Tree
+```
+
+Tree Awakening uses `resolvedMatrix` for line evaluation but cannot manufacture the free-spin trigger. The current strips produce the Three Trees event exactly once per 64 paid spins on average.
+
+### Retrigger
+
+The same natural Three Trees event during a free spin awards two additional spins. Retrigger spins are applied after the current free spin settles. A session may award no more than twenty total spins.
+
+### Locked bet and Fortune interaction
+
+Free spins use the line-bet index and total reference bet from the triggering paid spin.
+
+Free spins:
+
+- use all five paylines
+- retain ordinary Wild substitution
+- retain Tree Awakening
+- retain Commune combinations
+- retain win tiers, reactions, and manual stopping
+- cost zero coins
+- do not add Fortune points
+- do not consume a charged Fortune Meter
+- do not receive the 1.5x Fortune multiplier
+- do not permit bet adjustment or Refill
+
+A Fortune charge earned by the triggering paid spin remains stored for the next paid spin after the feature.
+
+## Authoritative result model
+
+Every result stores explicit classification:
+
+```js
+{
+  spinType: "paid", // or "free"
+  coinCost: 5,
+  referenceBet: 5
+}
+```
+
+`referenceBet` drives payout scaling, tier classification, and payout multiples. `coinCost` drives balance deductions, paid-wager statistics, and Fortune eligibility. Free spins therefore do not appear as extra paid wagers.
+
+Trigger data is saved before reel animation:
+
+```js
+{
+  freeSpinTrigger: {
+    triggered: true,
+    type: "three-trees",
+    awardedSpins: 4,
+    treeCells: [{ row: 0, reel: 0 }, { row: 2, reel: 1 }, { row: 1, reel: 2 }]
+  }
+}
+```
+
+## Persistence and recovery
+
+The browser save includes the free-spin session, pending result, original and resolved matrices, feature rolls, trigger cells, settled presentation result, locked bet, accumulated win, retriggers, contribution totals, and summary status.
+
+The session uses these statuses:
+
+```text
+intro
+ready
+spinning
+presenting
+complete
+summary
+```
+
+Animation-frame progress is not stored. On reload, the authoritative result is restored and settled exactly once. Recovery handles refreshes during the trigger intro, free-spin motion, settlement, reaction, retrigger, and final summary without rerolls, lost spins, duplicated credits, duplicated retriggers, or Fortune changes.
+
+## Exact math
+
+At line bet 1 and total bet 5:
+
+| Metric | Exact result |
 | --- | ---: |
-| Every paid spin | 2 |
-| Natural Small Win | +1 |
-| Natural Nice Win | +3 |
-| Natural Big Win | +8 |
-| Standard named combination | +3 |
-| Full Commune | +10 |
-| Natural Commune Jackpot | Instantly charge |
+| Current RTP without free spins | 87.8188% |
+| Three Trees paid trigger | 1.5625% |
+| Average paid spins between triggers | 64.0000 |
+| Incremental free-spin RTP | 5.6000% |
+| Final combined RTP | 93.4188% |
+| Average free spins per feature | 4.129032 |
+| Average retriggers per feature | 0.064516 |
+| Features with at least one retrigger | 6.1050% |
+| Average feature payout | 17.919952 coins |
+| Zero-pay feature frequency | 23.5401% |
+| Maximum feature payout | 2,020 coins |
+| Maximum trigger-plus-feature payout | 2,171 coins |
+| Reaction framework RTP effect | 0.0000% |
 
-At 100 points, the meter remains charged until the next paid spin. Changing the line bet, refilling coins, closing the page, or reloading does not clear the charge.
+See `docs/math-model.md` for the weighted transition model and full distributions.
 
-The next paid spin becomes a Fortune Spin. The charge is consumed and saved before reel motion begins, even if the spin loses or the page reloads. The Fortune Spin then starts the next meter cycle with its normal settlement award.
-
-Payout order:
-
-```text
-lineWinTotal + combinationWinTotal = preModifierWin
-finalWin = floor(preModifierWin x 1.5)
-fortuneBonus = finalWin - preModifierWin
-totalWin = finalWin
-```
-
-The multiplier applies to normal paylines, Tree-created line wins, named combinations, and Full Commune. It never applies to refills or other external grants. Meter gain uses the natural pre-multiplier win tier. The displayed win tier uses the final multiplied total.
-
-### Manual reel stopping
-
-When enabled, the primary button changes from **Spin** to **Stop** while reels move. Each click, tap, Space press, or Enter press requests exactly one unresolved reel in order:
-
-```text
-Reel 1 -> Reel 2 -> Reel 3
-```
-
-Early inputs queue. Reels still obey minimum stop times and minimum gaps, retain final approach and overshoot, and fall back to normal automatic timing when the player does nothing.
-
-| Timing | Value |
-| --- | ---: |
-| Reel 1 minimum | 650 ms |
-| Reel 2 minimum | 900 ms |
-| Reel 3 minimum | 1,150 ms |
-| Minimum gap | 180 ms |
-| Manual approach | 220 ms |
-| Reduced-motion approach | 120 ms |
-| Mild anticipation minimum | 150 ms |
-| Strong anticipation minimum | 300 ms |
-| Reduced mild minimum | 60 ms |
-| Reduced strong minimum | 100 ms |
-
-Manual stopping is presentation-only. It does not enter the authoritative result and cannot alter target stops, matrices, feature rolls, meter awards, payouts, tiers, or RTP. Held-key repeat events are ignored.
-
-## Authoritative outcome and settlement pipeline
-
-At paid-spin start:
-
-1. Read the wager and Fortune state.
-2. Determine whether the spin is a Fortune Spin.
-3. Generate target stops and existing feature rolls.
-4. Build the natural and resolved outcome.
-5. Calculate line and combination subtotals.
-6. Apply the Fortune modifier when active.
-7. Calculate the Fortune Meter award from the natural tier.
-8. Consume a charged meter when applicable.
-9. Deduct the wager.
-10. Save the complete pending result before reel motion.
-
-At settlement:
-
-1. Credit `totalWin` exactly once.
-2. Apply `fortuneMeterAward` exactly once.
-3. Cap and charge the meter when appropriate.
-4. Clear the pending result.
-5. Save settled state.
-6. Present feature callouts, Fortune gain, and the final win tier.
-
-A refresh during automatic motion, manual stopping, feature presentation, or celebration cannot reroll or duplicate the result.
-
-## Exact production math
-
-The production simulator imports the same `config.js` and `payouts.js` used by the game. It enumerates:
-
-```text
-13,824 reel-stop combinations x 4 Tree-roll states = 55,296 weighted outcomes
-```
-
-The Fortune mode then solves the 101-state persistent meter system exactly to its stationary distribution.
-
-| Configuration | Base RTP | Tree increment | Combination RTP | Fortune increment | Total RTP |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Base only | 82.0023% | 0.0000% | 0.0000% | 0.0000% | 82.0023% |
-| Base + Tree | 82.0023% | 2.6215% | 0.0000% | 0.0000% | 84.6238% |
-| Base + combinations | 82.0023% | 0.0000% | 2.1759% | 0.0000% | 84.1782% |
-| Base + Tree + combinations | 82.0023% | 2.6215% | 2.1759% | 0.0000% | 86.7998% |
-| Base + Tree + combinations + Fortune | 82.0023% | 2.6215% | 2.1759% | 1.0190% | 87.8188% |
-
-Fortune metrics:
-
-- Fortune Spin frequency: **2.4015%**
-- Average paid spins between Fortune Spins: **41.6401**
-- Average meter gain per paid spin: **2.422598**
-- Average natural payout on a Fortune Spin: **4.339988 coins**
-- Average final payout on a Fortune Spin: **6.461625 coins**
-- Average Fortune bonus per Fortune Spin: **2.121636 coins**
-- Fortune Spins paying zero: **69.6922%**
-- Maximum natural payout at line bet 1: **101 coins**, or **20.20 x total bet**
-- Maximum Fortune payout at line bet 1: **151 coins**, or **30.20 x total bet**
-- Manual-stop RTP effect: **0.0000%**
-
-See `docs/math-model.md` for the model and distributions.
-
-## Validation commands
+## Commands
 
 ```bash
 npm test
 npm run simulate
+npm run simulate:without-free-spins
+npm run simulate:with-free-spins
 node tools/simulate.mjs --check
 node tools/simulate.mjs --json
 ```
 
-`npm test` runs deterministic presentation tests, feature and settlement tests, all five exact reports, Fortune target guards, the locked 86.7998% pre-Fortune regression, and a manual-stop outcome-isolation assertion.
+The simulator enumerates all 55,296 weighted stop-and-Tree-roll outcomes, solves the Fortune stationary distribution, and then solves the bounded free-spin transition model exactly.
 
-Pull requests to `main` also run `npm test` through `.github/workflows/validate.yml`.
+## Feature flags
 
-## Development-only deterministic forcing
+The two new systems are independent:
 
-On `file:`, `localhost`, or `127.0.0.1`, a single next spin can be forced with:
-
-```text
-?debugStops=4,14,10&debugRoll=0
+```js
+CONFIG.features.characterReactions
+CONFIG.features.freeSpins
 ```
 
-The helper is unavailable on the production hostname and is consumed after one spin.
+Supported configurations:
 
-## Project structure
+- reactions off, free spins off
+- reactions on, free spins off
+- reactions off, free spins on
+- reactions on, free spins on
 
-```text
-/
-├── index.html
-├── styles.css
-├── presentation.css
-├── feature-presentation.css
-├── fortune.css
-├── package.json
-├── js/
-│   ├── config.js
-│   ├── game-engine.js
-│   ├── game-flow.js
-│   ├── reels.js
-│   ├── payouts.js
-│   ├── ui.js
-│   ├── effects.js
-│   ├── audio.js
-│   ├── bonuses.js
-│   ├── persistence.js
-│   └── statistics.js
-├── tools/
-│   ├── simulate.mjs
-│   ├── presentation-tests.mjs
-│   └── feature-tests.mjs
-├── docs/
-│   └── math-model.md
-└── assets/
-```
-
-The JavaScript uses ordered classic scripts and one `globalThis.CommuneFortune` namespace. This preserves direct static hosting and lets Node import production math modules without a build process.
+With free spins disabled, the current exact RTP remains 87.8188%. Reactions always have zero mathematical effect.
 
 ## Accessibility and reduced motion
 
-The Fortune Meter uses `role="progressbar"`, exposes its minimum, maximum, and settled value, and announces only completed gains or charge events. The Stop button identifies the next reel. Space and Enter ignore held-key repeat events. Reduced-motion mode removes the repeating charged pulse, shortens meter and reel approaches, and preserves clear static state changes.
+Reaction and feature panels use meaningful labels, single final announcements, keyboard Skip, non-color text labels, decorative-image hiding, and no focus trap. Reduced motion replaces repeated movement with short fades, removes reaction pulsing and cabinet movement, shortens free-spin reactions, and keeps Skip behavior intact.
 
-## Known limitations
+## Known limitations and deferred work
 
-This pass intentionally does not add Scatters, free spins, portrait animation, alternate portraits, imported audio, mystery modifiers, risk-or-collect, daily rewards, secret events, a backend, or a database. Manual stopping does not resume its exact visual progress after reload; the existing pending transaction instead resolves safely and exactly once. No current exact outcome reaches the 40 x natural Commune Jackpot threshold, though Jackpot charging is implemented for future wager-generated outcomes.
+- Alternate reaction portraits, frame animations, and video expressions are deferred. The fallback framework is ready for them.
+- Ally Selection and all seven ally abilities are deferred.
+- No Scatter symbol is used. The existing Tree performs both Wild and trigger roles.
+- Mystery modifiers, risk-or-collect, daily rewards, and secret events are deferred.
+- Audio is synthesized. No imported audio is included.
+- The project remains local-browser persistence only.
