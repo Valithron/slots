@@ -15,8 +15,8 @@
   });
 
   const FEATURES = Object.freeze({
-    spinDrama: false,
-    winTiers: false,
+    spinDrama: true,
+    winTiers: true,
     characterAnimations: false,
     expandingWilds: false,
     scatters: false,
@@ -40,6 +40,48 @@
       total: { minimum: 0.96, maximum: 0.97 },
     },
     features: FEATURES,
+    winTiers: {
+      thresholds: {
+        nice: 5,
+        big: 15,
+        jackpot: 40,
+      },
+      celebrationDurations: {
+        nice: 2400,
+        big: 3400,
+        jackpot: 4600,
+      },
+      countUpDurations: {
+        nice: 1500,
+        big: 2400,
+        jackpot: 3400,
+      },
+      countUpMinimum: 650,
+      countUpMaximum: 3600,
+    },
+    reducedMotion: {
+      reelDurationScale: 0.62,
+      anticipationDelayScale: 0.18,
+      celebrationDurationScale: 0.46,
+      countUpDurationScale: 0.34,
+      settleDistanceScale: 0.35,
+    },
+    anticipation: {
+      delays: {
+        none: 0,
+        mild: 350,
+        strong: 650,
+      },
+    },
+    characterAccentColors: [
+      "#d3d8e8",
+      "#86a66a",
+      "#a276ff",
+      "#89d2ff",
+      "#e0aa3e",
+      "#65e6cc",
+      "#ff7fba",
+    ],
     paylines: [
       [0, 0, 0],
       [1, 1, 1],
@@ -64,10 +106,17 @@
       ["KEN","CYD","COP","GAB","ASH","TOL","KEN","STR","CYD","COP","RYN","GAB","KEN","ASH","CYD","COP","TOL","GAB","STR","KEN","CYD","ASH","COP","RYN"],
     ],
     reelAnimation: {
-      // Includes a full buffer copy beyond the longest third-reel animation path.
-      repeatCount: 9,
+      // The longest path ends before copy 8; copies 8-10 remain a safety buffer.
+      repeatCount: 11,
       baseCopy: 2,
-      durations: [1900, 2350, 2800],
+      cycles: [3, 4, 5],
+      durations: [1550, 1900, 2350],
+      legacyDurations: [1900, 2350, 2800],
+      finalApproachDuration: 105,
+      stopOvershootRatio: 0.055,
+      settleDuration: 150,
+      impactClassDuration: 260,
+      tickMinimumInterval: 58,
     },
     paytableOrder: ["KEN", "GAB", "CYD", "ASH", "COP", "RYN", "STR", "TOL"],
   };
