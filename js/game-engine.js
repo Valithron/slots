@@ -77,8 +77,8 @@
       ui.hideCombinationCallout(); ui.clearCombinationMarks();
     }
   }
-  async function presentResult(result, free = false) {
-    await presentFeatures(result, free);
+  async function presentResult(result, free = false, featuresAlreadyPresented = false) {
+    if (!featuresAlreadyPresented) await presentFeatures(result, free);
     const reduced = app.effects.prefersReducedMotion();
     const tier = app.gameFlow.getPresentationTier(result, CONFIG.features.winTiers);
     const reaction = app.reactions.selectReaction(result, { enabled: CONFIG.features.characterReactions, compact: free, reducedMotion: reduced });
@@ -159,7 +159,7 @@
       await app.effects.wait(app.effects.prefersReducedMotion() ? 220 : CONFIG.characterPresentation.durations.retrigger, { signal: s });
       ui.hideFreeSpinLayer(); ui.clearTriggerTrees();
     }
-    await presentResult(result, true); clearPresentation(); ui.hideFreeSpinLayer();
+    await presentResult(result, true, true); clearPresentation(); ui.hideFreeSpinLayer();
     state.freeSpinSession = app.freeSpins.markFreeSpinPresented(state.freeSpinSession, result.id); save(); render();
   }
   async function freeLoop() {
