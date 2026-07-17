@@ -24,16 +24,20 @@
       container.innerHTML = entries.join("");
     };
 
+    const applyCurrentMotionClasses = () => app.effects.applyMotionClasses(ui.elements.machine, ui.elements.reelFrame);
+    applyCurrentMotionClasses();
+
     const originalUpdateDisplay = ui.updateDisplay;
     ui.updateDisplay = options => {
       originalUpdateDisplay(options);
       if (visualEffectsMode) visualEffectsMode.value = app.visualEffectsSettings.getMode();
-      app.effects.applyMotionClasses(ui.elements.machine, ui.elements.reelFrame);
+      applyCurrentMotionClasses();
     };
 
     visualEffectsMode?.addEventListener("change", event => {
       const mode = app.effects.setVisualEffectsMode(event.currentTarget.value);
       event.currentTarget.value = mode;
+      applyCurrentMotionClasses();
     });
 
     return ui;
