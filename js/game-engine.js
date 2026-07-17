@@ -7,6 +7,8 @@
 
   let state = app.persistence.loadState();
   let phase = state.pendingSpin ? GAME_STATES.RESOLVING : GAME_STATES.IDLE;
+  let celebrationAbortController = null;
+  let celebrationCleanup = null;
   state.gamePhase = phase;
 
   const audio = app.audio.createAudio(() => state.sound);
@@ -15,6 +17,14 @@
     reelGrid: ui.elements.reelGrid,
     playTick: audio.playTick,
     playReelStop: audio.playReelStop,
+    onReelStop: (reelIndex, options) => {
+      app.effects.reelImpact(ui.elements.machine, ui.elements.reelFrame, reelIndex, options);
+    },
+    onAnticipation: (level, active) => {
+      ui.setAnticipation(level, active);
+      app.effects.setAnticipation(ui.elements.machine, reels.getReelElements(), level, active);
+      if (active) audio.playAnticipation(level);
+    },
   });
 
   const allowedTransitions = {
@@ -51,7 +61,7 @@
   function updateDisplay() {
     ui.updateDisplay({
       state,
-      spinning: isBusy(),
+      phase,
       lineBet: getLineBet(),
       totalBet: getTotalBet(),
     });
@@ -98,6 +108,84 @@
     return true;
   }
 
+  function getWinMessage(result) {
+    const labels = result.lineWins
+      .map(win => CONFIG.symbols[win.symbolKey].name.replace(" Wild", ""))
+      .join(", ");
+    return `${result.lineWins.length} winning line${result.lineWins.length === 1 ? "" : "s"}: ${labels}. You won ${ui.formatNumber(result.totalWin)} coins!`;
+  }
+
+  function presentSmallWin(result, tier) {
+    ui.markWins(result.lineWins, reels, tier);
+    ui.setWinDisplay(result.totalWin);
+    ui.showMessage(getWinMessage(result), true);
+    audio.playTierSound("small");
+    app.effects.burstCoins(Math.min(28, 10 + result.lineWins.length * 6), ui.elements.reelFrame, {
+      reducedMotion: app.effects.prefersReducedMotion(),
+      spread: 0.72,
+    });
+  }
+
+  async function presentCelebration(result, tier) {
+    const reducedMotion = app.effects.prefersReducedMotion();
+    const dominantKey = app.payouts.getDominantWinningSymbol(result.lineWins);
+    const dominantName = dominantKey ? CONFIG.symbols[dominantKey].name : null;
+    const countUpDuration = app.gameFlow.getCountUpDuration(tier, { reducedMotion });
+    const celebrationDuration = app.gameFlow.getCelebrationDuration(tier, { reducedMotion });
+
+    setPhase(GAME_STATES.CELEBRATING, { persist: true });
+    ui.markWins(result.lineWins, reels, tier);
+    ui.showCelebration({ tier, dominantName });
+    ui.setPrimaryAction("skip");
+    ui.setControlsDisabled(true, state, { allowSpin: true });
+    ui.showMessage(`${tier === "jackpot" ? "Commune Jackpot" : tier === "big" ? "Big Win" : "Nice Win"}!`, true);
+
+    celebrationAbortController = new AbortController();
+    celebrationCleanup = app.effects.startTierEffects({
+      tier,
+      elements: ui.elements,
+      reducedMotion,
+    });
+    audio.playTierSound(tier);
+
+    const signal = celebrationAbortController.signal;
+    await Promise.all([
+      app.effects.countUp({
+        totalWin: result.totalWin,
+        duration: countUpDuration,
+        signal,
+        onUpdate: ui.updateCelebrationAmount,
+      }),
+      app.effects.wait(celebrationDuration, { signal }),
+    ]);
+
+    ui.updateCelebrationAmount(result.totalWin);
+    ui.announceCelebration({ tier, totalWin: result.totalWin });
+    ui.showMessage(getWinMessage(result), true);
+    celebrationCleanup?.();
+    celebrationCleanup = null;
+    celebrationAbortController = null;
+    ui.hideCelebration();
+    ui.setPrimaryAction("spin");
+    setPhase(GAME_STATES.IDLE, { persist: true });
+  }
+
+  async function presentResult(result) {
+    if (result.totalWin <= 0) {
+      ui.showMessage(chooseLossMessage());
+      audio.playLossSound();
+      return;
+    }
+
+    const tier = app.gameFlow.getPresentationTier(result, CONFIG.features.winTiers);
+    if (!CONFIG.features.winTiers || !app.gameFlow.isLongCelebrationTier(tier)) {
+      presentSmallWin(result, tier);
+      return;
+    }
+
+    await presentCelebration(result, tier);
+  }
+
   async function spin() {
     if (isBusy()) return;
 
@@ -110,6 +198,7 @@
 
     setPhase(GAME_STATES.SPINNING);
     ui.clearWins();
+    ui.hideCelebration();
     ui.setSpinning(true);
     ui.setControlsDisabled(true, state);
     ui.showMessage("The reels are turning…");
@@ -131,7 +220,11 @@
       saveState();
       updateDisplay();
 
-      await reels.spinTo(spinResult.targetStops);
+      await reels.spinTo(spinResult.targetStops, {
+        anticipation: CONFIG.features.spinDrama ? spinResult.anticipation : "none",
+        reducedMotion: app.effects.prefersReducedMotion(),
+        dramaEnabled: CONFIG.features.spinDrama,
+      });
       ui.setSpinning(false);
       setPhase(GAME_STATES.RESOLVING);
 
@@ -139,32 +232,21 @@
       if (!settledResult) throw new Error("Spin result was already settled or unavailable.");
       saveState();
 
-      if (settledResult.totalWin > 0) {
-        setPhase(GAME_STATES.CELEBRATING);
-        ui.markWins(settledResult.lineWins, reels);
-
-        const labels = settledResult.lineWins
-          .map(win => CONFIG.symbols[win.symbolKey].name.replace(" Wild", ""))
-          .join(", ");
-
-        ui.showMessage(
-          `${settledResult.lineWins.length} winning line${settledResult.lineWins.length === 1 ? "" : "s"}: ${labels}. You won ${ui.formatNumber(settledResult.totalWin)} coins!`,
-          true,
-        );
-        audio.playWinSound(settledResult.totalWin);
-        app.effects.burstCoins(Math.min(56, 18 + settledResult.lineWins.length * 10), ui.elements.reelFrame);
-        app.effects.flashScreen(ui.elements.screenFlash);
-      } else {
-        ui.showMessage(chooseLossMessage());
-        audio.playLossSound();
-      }
-
       statistics.recordSpin({ wager: settledResult.wager, payout: settledResult.totalWin });
       await app.bonuses.afterSpin({ state, spinResult: settledResult });
-      setPhase(GAME_STATES.IDLE, { force: phase !== GAME_STATES.CELEBRATING });
+      await presentResult(settledResult);
+
+      if (phase === GAME_STATES.RESOLVING) setPhase(GAME_STATES.IDLE);
       saveState();
     } catch (error) {
       console.error(error);
+      celebrationAbortController?.abort();
+      celebrationCleanup?.();
+      celebrationAbortController = null;
+      celebrationCleanup = null;
+      ui.hideCelebration();
+      ui.setAnticipation("none", false);
+
       const recovered = settlePendingSpin();
       setPhase(GAME_STATES.IDLE, { force: true });
       saveState();
@@ -176,9 +258,26 @@
         ui.showMessage("The spin was interrupted and safely resolved. Try again.");
       }
     } finally {
+      if (phase === GAME_STATES.CELEBRATING) setPhase(GAME_STATES.IDLE, { force: true, persist: true });
+      ui.hideCelebration();
+      ui.setPrimaryAction("spin");
       ui.setControlsDisabled(false, state);
       updateDisplay();
     }
+  }
+
+  function skipCelebration() {
+    if (phase !== GAME_STATES.CELEBRATING || !celebrationAbortController) return false;
+    celebrationAbortController.abort();
+    return true;
+  }
+
+  function handlePrimaryAction() {
+    return app.gameFlow.routePrimaryAction({
+      phase,
+      onSpin: () => { void spin(); },
+      onSkip: skipCelebration,
+    });
   }
 
   function adjustBet(direction) {
@@ -215,7 +314,7 @@
   function bindEvents() {
     ui.elements.betDown.addEventListener("click", () => adjustBet(-1));
     ui.elements.betUp.addEventListener("click", () => adjustBet(1));
-    ui.elements.spinButton.addEventListener("click", spin);
+    ui.elements.spinButton.addEventListener("click", handlePrimaryAction);
     ui.elements.refillButton.addEventListener("click", refill);
     ui.elements.soundButton.addEventListener("click", toggleSound);
     ui.elements.helpButton.addEventListener("click", ui.openHelp);
@@ -233,14 +332,15 @@
 
       if ((event.code === "Space" || event.key === "Enter") && !event.repeat) {
         event.preventDefault();
-        spin();
+        handlePrimaryAction();
+        return;
       }
 
       if (event.key === "ArrowLeft") adjustBet(-1);
       if (event.key === "ArrowRight") adjustBet(1);
     });
 
-    window.addEventListener("resize", () => {
+    globalThis.addEventListener("resize", () => {
       if (!isBusy()) reels.reposition();
     });
   }
@@ -256,6 +356,8 @@
 
   app.game = {
     spin,
+    handlePrimaryAction,
+    skipCelebration,
     adjustBet,
     refill,
     getState: () => ({ ...state }),
@@ -263,5 +365,5 @@
     getSessionStatistics: statistics.snapshot,
   };
 
-  initialize();
+  void initialize();
 })();
