@@ -1,12 +1,13 @@
 (() => {
   "use strict";
 
-  const app = window.CommuneFortune;
-  const { CONFIG } = app;
+  const app = globalThis.CommuneFortune;
+  const { CONFIG, GAME_STATES } = app;
   const ui = app.ui.createUI();
 
   let state = app.persistence.loadState();
-  let spinning = false;
+  let phase = state.pendingSpin ? GAME_STATES.RESOLVING : GAME_STATES.IDLE;
+  state.gamePhase = phase;
 
   const audio = app.audio.createAudio(() => state.sound);
   const statistics = app.statistics.createStatistics();
@@ -16,17 +17,41 @@
     playReelStop: audio.playReelStop,
   });
 
+  const allowedTransitions = {
+    [GAME_STATES.IDLE]: new Set([GAME_STATES.SPINNING]),
+    [GAME_STATES.SPINNING]: new Set([GAME_STATES.RESOLVING, GAME_STATES.IDLE]),
+    [GAME_STATES.RESOLVING]: new Set([GAME_STATES.CELEBRATING, GAME_STATES.IDLE]),
+    [GAME_STATES.CELEBRATING]: new Set([GAME_STATES.IDLE]),
+  };
+
   const getLineBet = () => app.payouts.getLineBet(state);
   const getTotalBet = () => app.payouts.getTotalBet(state);
+  const isBusy = () => phase !== GAME_STATES.IDLE;
+
+  function createResultId() {
+    if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+    return `spin-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
 
   function saveState() {
+    state.gamePhase = phase;
     app.persistence.saveState(state);
+  }
+
+  function setPhase(nextPhase, { force = false, persist = false } = {}) {
+    if (!force && nextPhase !== phase && !allowedTransitions[phase]?.has(nextPhase)) {
+      throw new Error(`Invalid game-state transition: ${phase} -> ${nextPhase}`);
+    }
+
+    phase = nextPhase;
+    state.gamePhase = nextPhase;
+    if (persist) saveState();
   }
 
   function updateDisplay() {
     ui.updateDisplay({
       state,
-      spinning,
+      spinning: isBusy(),
       lineBet: getLineBet(),
       totalBet: getTotalBet(),
     });
@@ -44,8 +69,37 @@
     return messages[Math.floor(Math.random() * messages.length)];
   }
 
+  function settlePendingSpin() {
+    const pending = state.pendingSpin;
+    if (!pending || pending.settlementStatus !== "pending") return null;
+
+    state.coins += pending.totalWin;
+    state.lastWin = pending.totalWin;
+    const settled = { ...pending, settlementStatus: "settled" };
+    state.pendingSpin = null;
+    return settled;
+  }
+
+  function recoverPendingSpin() {
+    if (!state.pendingSpin) {
+      setPhase(GAME_STATES.IDLE, { force: true });
+      return false;
+    }
+
+    const recovered = settlePendingSpin();
+    setPhase(GAME_STATES.IDLE, { force: true });
+    saveState();
+
+    if (recovered?.totalWin > 0) {
+      ui.showMessage(`Recovered an interrupted spin and credited ${ui.formatNumber(recovered.totalWin)} coins.`, true);
+    } else {
+      ui.showMessage("Recovered an interrupted spin. No win was due.");
+    }
+    return true;
+  }
+
   async function spin() {
-    if (spinning) return;
+    if (isBusy()) return;
 
     const totalBet = getTotalBet();
     if (state.coins < totalBet) {
@@ -54,62 +108,81 @@
       return;
     }
 
-    spinning = true;
+    setPhase(GAME_STATES.SPINNING);
     ui.clearWins();
     ui.setSpinning(true);
-    state.coins -= totalBet;
-    state.lastWin = 0;
-    updateDisplay();
-    saveState();
     ui.setControlsDisabled(true, state);
     ui.showMessage("The reels are turning…");
     audio.playSpinStart();
 
-    await app.bonuses.beforeSpin({ state, totalBet });
+    try {
+      await app.bonuses.beforeSpin({ state, totalBet });
 
-    const targetStops = reels.randomStops();
-    await reels.spinTo(targetStops);
+      const targetStops = reels.randomStops();
+      const spinResult = app.payouts.createSpinResult({
+        targetStops,
+        state,
+        id: createResultId(),
+      });
 
-    ui.setSpinning(false);
-    const matrix = reels.getVisibleMatrix();
-    const wins = app.payouts.evaluateWins(matrix, state);
-    const totalWin = wins.reduce((sum, win) => sum + win.payout, 0);
-
-    if (totalWin > 0) {
-      state.coins += totalWin;
-      state.lastWin = totalWin;
-      ui.markWins(wins, reels);
-
-      const labels = wins
-        .map(win => CONFIG.symbols[win.symbolKey].name.replace(" Wild", ""))
-        .join(", ");
-
-      ui.showMessage(
-        `${wins.length} winning line${wins.length === 1 ? "" : "s"}: ${labels}. You won ${ui.formatNumber(totalWin)} coins!`,
-        true,
-      );
-      audio.playWinSound(totalWin);
-      app.effects.burstCoins(Math.min(56, 18 + wins.length * 10), ui.elements.reelFrame);
-      app.effects.flashScreen(ui.elements.screenFlash);
-    } else {
+      state.coins -= totalBet;
       state.lastWin = 0;
-      ui.showMessage(chooseLossMessage());
-      audio.playLossSound();
+      state.pendingSpin = spinResult;
+      saveState();
+      updateDisplay();
+
+      await reels.spinTo(spinResult.targetStops);
+      ui.setSpinning(false);
+      setPhase(GAME_STATES.RESOLVING);
+
+      const settledResult = settlePendingSpin();
+      if (!settledResult) throw new Error("Spin result was already settled or unavailable.");
+      saveState();
+
+      if (settledResult.totalWin > 0) {
+        setPhase(GAME_STATES.CELEBRATING);
+        ui.markWins(settledResult.lineWins, reels);
+
+        const labels = settledResult.lineWins
+          .map(win => CONFIG.symbols[win.symbolKey].name.replace(" Wild", ""))
+          .join(", ");
+
+        ui.showMessage(
+          `${settledResult.lineWins.length} winning line${settledResult.lineWins.length === 1 ? "" : "s"}: ${labels}. You won ${ui.formatNumber(settledResult.totalWin)} coins!`,
+          true,
+        );
+        audio.playWinSound(settledResult.totalWin);
+        app.effects.burstCoins(Math.min(56, 18 + settledResult.lineWins.length * 10), ui.elements.reelFrame);
+        app.effects.flashScreen(ui.elements.screenFlash);
+      } else {
+        ui.showMessage(chooseLossMessage());
+        audio.playLossSound();
+      }
+
+      statistics.recordSpin({ wager: settledResult.wager, payout: settledResult.totalWin });
+      await app.bonuses.afterSpin({ state, spinResult: settledResult });
+      setPhase(GAME_STATES.IDLE, { force: phase !== GAME_STATES.CELEBRATING });
+      saveState();
+    } catch (error) {
+      console.error(error);
+      const recovered = settlePendingSpin();
+      setPhase(GAME_STATES.IDLE, { force: true });
+      saveState();
+      ui.setSpinning(false);
+
+      if (recovered?.totalWin > 0) {
+        ui.showMessage(`The animation was interrupted, but ${ui.formatNumber(recovered.totalWin)} coins were safely credited.`, true);
+      } else {
+        ui.showMessage("The spin was interrupted and safely resolved. Try again.");
+      }
+    } finally {
+      ui.setControlsDisabled(false, state);
+      updateDisplay();
     }
-
-    statistics.recordSpin({ wager: totalBet, payout: totalWin });
-    await app.bonuses.afterSpin({ state, totalBet, matrix, wins, totalWin });
-
-    updateDisplay();
-    saveState();
-    spinning = false;
-    ui.setControlsDisabled(false, state);
-    updateDisplay();
   }
 
   function adjustBet(direction) {
-    if (spinning) return;
-
+    if (isBusy()) return;
     state.lineBetIndex = Math.min(
       Math.max(state.lineBetIndex + direction, 0),
       CONFIG.lineBets.length - 1,
@@ -122,8 +195,7 @@
   }
 
   function refill() {
-    if (spinning) return;
-
+    if (isBusy()) return;
     state.coins = CONFIG.startingCoins;
     state.lastWin = 0;
     ui.clearWins();
@@ -169,7 +241,7 @@
     });
 
     window.addEventListener("resize", () => {
-      if (!spinning) reels.reposition();
+      if (!isBusy()) reels.reposition();
     });
   }
 
@@ -177,6 +249,8 @@
     ui.buildPaytable();
     bindEvents();
     await reels.buildReels();
+    const recovered = recoverPendingSpin();
+    if (!recovered) ui.showMessage("Choose a bet and spin.");
     updateDisplay();
   }
 
@@ -185,6 +259,7 @@
     adjustBet,
     refill,
     getState: () => ({ ...state }),
+    getPhase: () => phase,
     getSessionStatistics: statistics.snapshot,
   };
 
