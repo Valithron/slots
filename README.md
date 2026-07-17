@@ -53,6 +53,8 @@ Mobile tactile feedback therefore keeps reel geometry stationary:
 - stop feedback uses a short overlay flash
 - final-reel anticipation uses an overlay glow
 
+The mobile-safe classes are applied before reel construction and before any spin can start. Automated compositing guards prevent mobile viewport, frame, or cabinet movement from being reintroduced. Physical iPhone and in-app-browser verification is still required before merge.
+
 Desktop retains the existing localized movement where it is stable.
 
 ## Commune Line combinations
