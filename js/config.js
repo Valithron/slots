@@ -29,7 +29,8 @@
       ["KEN","CYD","COP","GAB","ASH","TOL","KEN","STR","CYD","COP","RYN","GAB","KEN","ASH","CYD","COP","TOL","GAB","STR","KEN","CYD","ASH","COP","RYN"],
     ],
     reelAnimation: {
-      repeatCount: 7,
+      // Includes a full buffer copy beyond the longest third-reel animation path.
+      repeatCount: 9,
       baseCopy: 2,
       durations: [1900, 2350, 2800],
     },
