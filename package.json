@@ -1,13 +1,15 @@
 {
   "name": "commune-fortune",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
-  "description": "Private-play slot machine with deterministic Fortune progression and presentation-only manual reel stops.",
+  "type": "module",
+  "description": "A private, static slot-style game with authoritative math, character reactions, and persistent Commune Free Spins.",
   "scripts": {
-    "simulate": "node tools/simulate.mjs",
-    "simulate:json": "node tools/simulate.mjs --json",
-    "test:presentation": "node tools/presentation-tests.mjs",
+    "test": "node tools/feature-tests.mjs && node tools/presentation-tests.mjs && node tools/simulate.mjs --check",
     "test:features": "node tools/feature-tests.mjs",
-    "test": "node tools/presentation-tests.mjs && node tools/feature-tests.mjs && node tools/simulate.mjs --check"
+    "test:presentation": "node tools/presentation-tests.mjs",
+    "simulate": "node tools/simulate.mjs",
+    "simulate:without-free-spins": "node tools/simulate.mjs --free-spins=off",
+    "simulate:with-free-spins": "node tools/simulate.mjs --free-spins=on"
   }
 }

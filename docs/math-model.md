@@ -5,19 +5,23 @@
 - Base-game RTP: **82% to 83%**
 - Tree Awakening increment: **2.5% to 3.5%**
 - Combination contribution: **1.75% to 2.35%**
-- Pre-Fortune combined RTP: locked at **86.7998%**
+- Pre-Fortune combined RTP: **86.7998%**
 - Fortune Meter increment: **0.8% to 1.2%**
-- Fortune combined target: **87.6% to 88.0%**
-- Long-term final game target: **96% to 97%**
-- External grants and rescue refills are excluded from wager RTP.
-- Manual reel stopping must have **0.0000%** RTP effect.
+- Current RTP without free spins: **87.8188%**
+- Commune Free Spins increment target: **5.4% to 5.9%**
+- Combined target after this pass: **93.2% to 93.8%**
+- Long-term final target: **96% to 97%**
+- Character reactions: **0.0000% RTP effect**
+- Manual stopping: **0.0000% RTP effect**
 
-## Exact outcome space
+External grants and Refill are excluded from wager RTP.
+
+## Exact weighted outcome space
 
 Three 24-stop reels produce:
 
 ```text
-24 x 24 x 24 = 13,824 reel-stop combinations
+24 x 24 x 24 = 13,824 stop combinations
 ```
 
 Tree Awakening has four equally weighted predetermined roll states:
@@ -26,163 +30,201 @@ Tree Awakening has four equally weighted predetermined roll states:
 13,824 x 4 = 55,296 weighted outcomes
 ```
 
-`tools/simulate.mjs` imports production `js/config.js` and `js/payouts.js`. There is no simulator-only paytable, feature roll, meter-award function, or multiplier implementation.
+`tools/simulate.mjs` imports production `js/config.js`, `js/free-spins.js`, and `js/payouts.js`. It does not maintain simulator-only strips, payouts, triggers, feature rolls, Fortune awards, or multipliers.
 
-## Existing natural wager RTP
+## Existing wager RTP
 
-| Mode | Base RTP | Tree increment | Combination RTP | Total RTP |
-| --- | ---: | ---: | ---: | ---: |
-| Base only | 82.0023% | 0.0000% | 0.0000% | 82.0023% |
-| Base + Tree | 82.0023% | 2.6215% | 0.0000% | 84.6238% |
-| Base + combinations | 82.0023% | 0.0000% | 2.1759% | 84.1782% |
-| Base + Tree + combinations | 82.0023% | 2.6215% | 2.1759% | 86.7998% |
-
-The disabled Fortune feature therefore preserves the prior exact combined result.
-
-## Fortune award function
-
-For every paid spin:
-
-```text
-award = 2 base points
-      + natural-tier points
-      + combination points
-```
-
-| Natural event | Points |
+| Component | Exact RTP |
 | --- | ---: |
-| Paid spin | 2 |
-| Small Win | +1 |
-| Nice Win | +3 |
-| Big Win | +8 |
-| Standard named combination | +3 |
-| Full Commune | +10 |
-| Commune Jackpot | Charge to 100 |
+| Base line RTP | 82.0023% |
+| Tree Awakening increment | 2.6215% |
+| Commune combinations | 2.1759% |
+| Pre-Fortune total | 86.7998% |
+| Fortune Meter increment | 1.0190% |
+| Current total without free spins | 87.8188% |
 
-Tier points are determined from `preModifierWin`. The 1.5× modifier cannot elevate its own meter award.
+Disabling `CONFIG.features.freeSpins` therefore preserves the prior 87.8188% total.
 
-The exact natural-outcome award distribution is:
+## Fortune Meter model
 
-| Total points | Weighted outcomes | Frequency |
-| ---: | ---: | ---: |
-| 2 | 38,537 | 69.6922% |
-| 3 | 14,202 | 25.6840% |
-| 5 | 1,826 | 3.3024% |
-| 6 | 616 | 1.1140% |
-| 8 | 8 | 0.0145% |
-| 10 | 43 | 0.0778% |
-| 15 | 64 | 0.1157% |
+Every paid spin adds two base points, then natural-tier and combination points. The meter has states 0 through 100. State 100 means the next paid spin is charged. A charged paid spin consumes the state before its current outcome award is applied.
 
-Average meter gain is **2.422598 points per paid spin**.
+The exact 101-state stationary solution gives:
 
-## Fortune payout function
-
-Natural wager-generated payout is calculated first:
-
-```text
-preModifierWin = lineWinTotal + combinationWinTotal
-```
-
-A charged spin uses:
-
-```text
-finalWin = floor(preModifierWin x 1.5)
-fortuneBonus = finalWin - preModifierWin
-totalWin = finalWin
-```
-
-A zero payout remains zero. Fractional halves round down. The modifier is represented exactly once in `result.modifiers` and the final total is credited once.
-
-## Stateful exact meter model
-
-The Fortune Meter is represented by 101 states:
-
-```text
-0, 1, 2, ... 99, 100
-```
-
-State `100` means charged. When a charged paid spin begins, its starting value is consumed to `0` before the outcome award is applied. For each state `s` and exact natural outcome award `g`:
-
-```text
-base(s) = 0 when s = 100, otherwise s
-next(s, g) = min(100, base(s) + g)
-```
-
-A Jackpot transition maps directly to state `100`.
-
-The simulator builds the weighted transition matrix from all 55,296 natural outcomes and iterates the probability vector to a tolerance below `1e-15`. The stationary mass at state `100` is the long-run Fortune Spin frequency.
-
-Results:
-
-- Stationary charged probability: **2.40152995596%**
 - Fortune Spin frequency: **2.4015%**
 - Average cycle length: **41.6401 paid spins**
-- Average natural payout when a Fortune Spin occurs: **4.339988 coins**
-- Average final Fortune payout: **6.461625 coins**
-- Average Fortune bonus: **2.121636 coins**
+- Average Fortune bonus: **2.121636 coins when charged**
 - Incremental Fortune RTP: **1.0190%**
-- Final combined RTP: **87.8188%**
 
-The full 0-through-100 stationary distribution is emitted by:
+Free spins do not transition the Fortune state. A charge present before or earned by the triggering result remains unchanged throughout the feature.
 
-```bash
-node tools/simulate.mjs --json
-```
+## Three Trees trigger frequency
 
-## Fortune Spin tier distribution
-
-The final displayed tier is calculated after the multiplier.
-
-| Final tier | Frequency among Fortune Spins |
-| --- | ---: |
-| No Win | 69.6922% |
-| Small Win | 22.2584% |
-| Nice Win | 7.6859% |
-| Big Win | 0.3635% |
-| Commune Jackpot | 0.0000% |
-
-Maximum current outcomes at line bet 1:
-
-| Result | Coins | Total-bet multiple |
-| --- | ---: | ---: |
-| Maximum natural payout | 101 | 20.20× |
-| Maximum Fortune payout | 151 | 30.20× |
-
-## Authoritative state transaction
-
-At spin start, the result stores target stops, original and resolved matrices, feature rolls, transformations, wins, subtotals, `preModifierWin`, Fortune modifier, natural and final tiers, anticipation, and `fortuneMeterAward`. If charged, the persistent meter is reset before the wager and pending result are saved.
-
-At settlement, `totalWin` is credited and `fortuneMeterAward` is applied in one exactly-once transition. The pending result is then cleared and settled state is saved before presentation.
-
-This order prevents:
-
-- reusing a charged meter by refreshing
-- duplicating the 1.5× modifier
-- crediting a Fortune bonus separately
-- applying meter points twice
-- using the final tier to inflate the award
-- rerolling Tree Awakening or target stops
-
-## Manual stop isolation
-
-Manual stopping exists only in `js/reels.js` and `js/game-flow.js`. No stop request, timestamp, queue state, or animation position is included in `createSpinResult`.
-
-The exact guard creates the same predetermined spin with `manualStops: false` and `manualStops: true`, then compares:
-
-- target stops
-- original and resolved matrices
-- feature rolls
-- transformations
-- line and combination wins
-- `preModifierWin`
-- Fortune Meter award
-- final payout
-- final tier
-
-All fields must be identical. Therefore:
+Each 24-stop reel contains two Tree symbols. A three-row window contains a Tree with probability:
 
 ```text
-Manual stop RTP effect = 0.0000%
+6 visible Tree-containing top stops / 24 top stops = 1/4
+```
+
+The reels are independent, so:
+
+```text
+P(Tree on all three reels) = 1/4 x 1/4 x 1/4 = 1/64
+```
+
+Therefore:
+
+- Paid trigger frequency: **1.5625%**
+- Average paid spins between triggers: **64.0000**
+
+The test is applied to `originalMatrix`. Tree Awakening modifies only `resolvedMatrix`, so it has no trigger influence.
+
+## Free-spin transition model
+
+A paid trigger starts with four spins. Every free spin independently uses the same exact weighted outcome distribution as the natural game, with Fortune disabled and the triggering `referenceBet` locked.
+
+On a natural Three Trees free-spin result:
+
+```text
+remaining = remaining - 1 + min(2, 20 - totalAwarded)
+totalAwarded = totalAwarded + min(2, 20 - totalAwarded)
+```
+
+Otherwise:
+
+```text
+remaining = remaining - 1
+```
+
+The simulator solves states identified by:
+
+```text
+(remainingSpins, totalAwardedSpins)
+```
+
+The state space is finite because total awarded spins cannot exceed twenty.
+
+## Exact free-spin results
+
+At line bet 1 and reference bet 5:
+
+| Metric | Exact result |
+| --- | ---: |
+| Average natural payout per free spin | 4.339988 coins |
+| Retrigger probability per free spin | 1.5625% |
+| Average free spins per feature | 4.129032 |
+| Average retriggers per feature | 0.064516 |
+| Features with at least one retrigger | 6.1050% |
+| Average feature payout | 17.919952 coins |
+| Average feature payout multiple | 3.583990x |
+| Zero-pay feature frequency | 23.5401% |
+| Tree Awakening frequency per free spin | 2.0833% |
+| Any combination frequency per free spin | 1.2442% |
+| Maximum single free-spin payout | 101 coins |
+| Maximum feature payout | 2,020 coins |
+| Maximum feature payout multiple | 404.00x |
+| Maximum triggering paid result with Fortune | 151 coins |
+| Maximum trigger plus feature | 2,171 coins |
+| Maximum trigger-plus-feature multiple | 434.20x |
+
+Session length distribution:
+
+| Spins completed | Probability |
+| ---: | ---: |
+| 4 | 93.8950% |
+| 6 | 5.7767% |
+| 8 | 0.3110% |
+| 10 | 0.0164% |
+| 12 | 0.0009% |
+| 14 | less than 0.0001% |
+| 16 | less than 0.0001% |
+| 18 | less than 0.0001% |
+| 20 | less than 0.0001% |
+
+## Incremental and combined RTP
+
+A feature begins once per 64 paid spins and pays 17.919952 coins on average:
+
+```text
+incremental free-spin RTP
+= (1/64 x 17.919952) / 5
+= 5.599985%
+```
+
+Rounded reporting:
+
+```text
+incremental free-spin RTP = 5.6000%
+final combined RTP        = 93.4188%
+```
+
+This intentionally leaves approximately 2.5812 to 3.5812 percentage points for later Ally Selection, mystery modifiers, secret events, and final tuning.
+
+## Result classification
+
+Every result stores:
+
+```js
+spinType: "paid" // or "free"
+coinCost: 5       // zero for free spins
+referenceBet: 5   // locked triggering total bet for free spins
+```
+
+`referenceBet` is used for line scaling, tier classification, RTP comparison, and payout multiples. `coinCost` is used for balance deduction, paid-wager statistics, and Fortune eligibility.
+
+Free-spin results therefore do not create additional paid wagers.
+
+## Exactly-once session transaction
+
+Before animation, each free spin stores target stops, original and resolved matrices, feature roll, transformations, wins, trigger data, payout, and session classification as `pendingSpin`.
+
+Settlement performs one transaction:
+
+1. Credit the individual payout.
+2. Increment completed spins.
+3. Decrement remaining spins.
+4. Add the payout to `accumulatedWin`.
+5. Add ordinary line-win contribution totals.
+6. Apply a retrigger once, subject to the cap.
+7. Store the settled result for reaction and retrigger recovery.
+8. Clear `pendingSpin`.
+9. Save before presentation.
+
+The summary displays `accumulatedWin` but never credits it again.
+
+## Recovery model
+
+Persistent session statuses are:
+
+```text
+intro
+ready
+spinning
+presenting
+complete
+summary
+```
+
+The save retains the trigger result, last settled free-spin result, presentation result, trigger cells, locked bet, counts, total win, and contribution totals. Reload never regenerates stops or feature rolls.
+
+A reload during reel motion settles the saved pending result once. A reload during reaction or retrigger presentation restores the saved settled result. A reload during summary restores presentation only.
+
+## Reaction isolation
+
+Reaction selection consumes an already authoritative result and returns presentation metadata only. The simulator runs the exact same result math with reactions disabled and confirms:
+
+```text
+Reaction framework RTP effect = 0.0000%
+```
+
+The tests also compare target stops, matrices, rolls, transformations, wins, triggers, Fortune awards, and totals with reactions on and off.
+
+## Manual-stop isolation
+
+Manual stop input changes reel animation timing only. It is absent from result generation and settlement. Automated tests compare all mathematical result fields with manual stops enabled and disabled.
+
+```text
+Manual-stop RTP effect = 0.0000%
 ```
 
 ## Commands
@@ -190,14 +232,14 @@ Manual stop RTP effect = 0.0000%
 ```bash
 npm test
 npm run simulate
+npm run simulate:without-free-spins
+npm run simulate:with-free-spins
 node tools/simulate.mjs --check
 node tools/simulate.mjs --json
 ```
 
-The exact check fails if the locked base or pre-Fortune RTP changes, if Tree, combination, or Fortune contributions leave their configured targets, if final Fortune RTP leaves 87.6% to 88.0%, or if manual-stop isolation fails.
+`--check` fails if the locked current RTP changes, trigger frequency is not exactly 1 in 64, free-spin contribution leaves 5.4% to 5.9%, final combined RTP leaves 93.2% to 93.8%, or reaction RTP is nonzero.
 
-## Remaining budget and limitations
+## Deferred systems
 
-The current combined RTP is **87.8188%**. Relative to the long-term 96% to 97% target, approximately **8.1812 to 9.1812 percentage points** remain for future wager-generated features.
-
-This model excludes external grants, Scatters, free spins, mystery modifiers, daily rewards, secret events, and risk games. No current natural outcome reaches the 40× Commune Jackpot threshold, so instant Jackpot charging is implemented but has zero current transition weight.
+The model does not include Ally Selection, ally abilities, alternate reaction assets, a Scatter symbol, mystery modifiers, risk-or-collect, daily rewards, or secret events. Existing base payouts, reel strips, Tree Awakening, combinations, and Fortune values are unchanged.

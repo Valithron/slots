@@ -1,12 +1,17 @@
 (() => {
   "use strict";
   const app = globalThis.CommuneFortune;
+  Object.entries(app.CONFIG.characterPresentation.characters).forEach(([key, character]) => {
+    if (app.CONFIG.symbols[key] && character?.base) app.CONFIG.symbols[key].image = app.reactions.versionAssetUrl(character.base);
+  });
 
   function createAudio(getSoundEnabled) {
     let audioContext = null;
     function ensureAudio() {
       if (!getSoundEnabled()) return null;
-      if (!audioContext) audioContext = new (globalThis.AudioContext || globalThis.webkitAudioContext)();
+      const AudioContextClass = globalThis.AudioContext || globalThis.webkitAudioContext;
+      if (!AudioContextClass) return null;
+      if (!audioContext) audioContext = new AudioContextClass();
       if (audioContext.state === "suspended") void audioContext.resume();
       return audioContext;
     }
@@ -17,8 +22,8 @@
       const volume = ctx.createGain();
       const start = ctx.currentTime + when;
       oscillator.type = type;
-      oscillator.frequency.setValueAtTime(frequency, start);
-      if (endFrequency) oscillator.frequency.exponentialRampToValueAtTime(endFrequency, start + duration);
+      oscillator.frequency.setValueAtTime(Math.max(1, frequency), start);
+      if (endFrequency) oscillator.frequency.exponentialRampToValueAtTime(Math.max(1, endFrequency), start + duration);
       volume.gain.setValueAtTime(0.0001, start);
       volume.gain.exponentialRampToValueAtTime(gain, start + 0.01);
       volume.gain.exponentialRampToValueAtTime(0.0001, start + duration);
@@ -64,12 +69,34 @@
       if (tier === "big") { chord([392, 523, 659, 784, 1047], { spacing: 0.12, duration: 0.34, gain: 0.085 }); tone({ frequency: 98, endFrequency: 196, duration: 0.86, type: "sawtooth", gain: 0.035 }); return; }
       if (tier === "jackpot") { chord([262,330,392,523,659,784,1047,1319], { spacing: 0.1, duration: 0.38, gain: 0.08 }); chord([523,659,784,1047], { spacing: 0.08, duration: 0.5, gain: 0.06, type: "sine" }); tone({ frequency: 65, endFrequency: 260, duration: 1.4, type: "sawtooth", gain: 0.04 }); }
     }
+    function playCharacterReaction(level = "nice") {
+      const base = level === "big" || level === "jackpot" ? 440 : 587;
+      chord([base, base * 1.25, base * 1.5], { spacing: 0.055, duration: 0.18, gain: 0.045, type: "sine" });
+    }
+    function playGroupReaction() { chord([392, 494, 587, 740], { spacing: 0.05, duration: 0.22, gain: 0.048 }); }
+    function playFreeSpinTrigger() {
+      tone({ frequency: 98, endFrequency: 392, duration: 0.8, type: "sine", gain: 0.045 });
+      chord([392, 523, 659, 784], { spacing: 0.09, duration: 0.34, gain: 0.058, type: "triangle" });
+    }
+    function playFreeSpinStart() {
+      chord([330, 440, 554, 659], { spacing: 0.075, duration: 0.22, gain: 0.05 });
+      tone({ frequency: 165, endFrequency: 330, duration: 0.42, type: "sine", gain: 0.03 });
+    }
+    function playRetrigger() {
+      chord([523, 659, 784, 1047], { spacing: 0.055, duration: 0.2, gain: 0.06 });
+      tone({ frequency: 130, endFrequency: 260, duration: 0.42, type: "triangle", gain: 0.035 });
+    }
+    function playFreeSpinSummary() { chord([262, 330, 392, 523, 659], { spacing: 0.085, duration: 0.32, gain: 0.055, type: "sine" }); }
     const playWinSound = amount => playTierSound(amount >= 100 ? "nice" : "small");
     const playLossSound = () => tone({ frequency: 180, endFrequency: 120, duration: 0.22, type: "triangle", gain: 0.035 });
     function playErrorSound() { tone({ frequency: 115, duration: 0.12, type: "square", gain: 0.035 }); tone({ frequency: 92, duration: 0.14, type: "square", gain: 0.03, when: 0.13 }); }
     const playButtonTone = () => tone({ frequency: 480, duration: 0.055, type: "sine", gain: 0.04 });
     const playRefillSound = () => chord([330,440,550,660], { spacing: 0.07, duration: 0.12, gain: 0.05 });
-    return { playSpinStart, playTick, playReelStop, playAnticipation, playAwakening, playCombination, playTierSound, playWinSound, playLossSound, playErrorSound, playButtonTone, playRefillSound };
+    return {
+      playSpinStart, playTick, playReelStop, playAnticipation, playAwakening, playCombination,
+      playTierSound, playCharacterReaction, playGroupReaction, playFreeSpinTrigger, playFreeSpinStart,
+      playRetrigger, playFreeSpinSummary, playWinSound, playLossSound, playErrorSound, playButtonTone, playRefillSound,
+    };
   }
   app.audio = { createAudio };
 })();

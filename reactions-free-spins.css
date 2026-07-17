@@ -1,0 +1,103 @@
+.free-spins-hud {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 8px 14px 0;
+  padding: 8px;
+  border: 1px solid rgba(241, 217, 138, .38);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(16, 41, 65, .98), rgba(7, 21, 39, .98));
+  box-shadow: inset 0 0 18px rgba(241, 217, 138, .08);
+}
+.free-spins-hud[hidden] { display: none; }
+.free-spins-hud > div { display: flex; flex-direction: column; align-items: center; min-width: 0; }
+.free-spins-hud span { font-size: .65rem; letter-spacing: .08em; text-transform: uppercase; opacity: .74; }
+.free-spins-hud strong { font-size: 1rem; color: #f1d98a; }
+.machine.is-free-spins .fortune-meter-wrap { opacity: .72; }
+
+.reaction-layer,
+.free-spin-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 18;
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+.reaction-layer.is-visible,
+.free-spin-layer.is-visible { opacity: 1; pointer-events: none; }
+.reaction-layer.tier-big,
+.reaction-layer.tier-jackpot,
+.free-spin-layer.is-visible { background: rgba(3, 10, 21, .42); }
+.reaction-panel,
+.free-spin-panel {
+  position: relative;
+  width: min(92%, 430px);
+  overflow: hidden;
+  border: 2px solid var(--reaction-accent, #f1d98a);
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(15, 38, 62, .97), rgba(5, 17, 34, .98));
+  box-shadow: 0 16px 54px rgba(0,0,0,.48), 0 0 30px color-mix(in srgb, var(--reaction-accent, #f1d98a) 32%, transparent);
+  padding: 16px;
+  transform: translateY(8px) scale(.98);
+  transition: transform 220ms ease;
+}
+.reaction-layer.is-visible .reaction-panel,
+.free-spin-layer.is-visible .free-spin-panel { transform: translateY(0) scale(1); }
+.reaction-layer.is-compact .reaction-panel { width: min(78%, 330px); padding: 10px; }
+.reaction-layer.tier-big .reaction-panel,
+.reaction-layer.tier-jackpot .reaction-panel { width: min(96%, 480px); padding: 20px; }
+.reaction-aura { position: absolute; inset: -35%; background: radial-gradient(circle, color-mix(in srgb, var(--reaction-accent, #f1d98a) 24%, transparent), transparent 58%); opacity: .9; animation: reactionPulse 1.8s ease-in-out infinite; }
+.reaction-roster { position: relative; display: flex; justify-content: center; align-items: flex-end; min-height: 114px; margin-bottom: 6px; }
+.reaction-portrait { width: clamp(74px, 25vw, 132px); aspect-ratio: 1; object-fit: contain; filter: drop-shadow(0 8px 12px rgba(0,0,0,.38)); animation: reactionLift 460ms cubic-bezier(.2,.8,.2,1) both; }
+.reaction-roster.is-group .reaction-portrait { width: clamp(48px, 14vw, 78px); margin-inline: -5px; }
+.reaction-roster.is-full .reaction-portrait { width: clamp(39px, 11vw, 62px); margin-inline: -7px; }
+.reaction-tree { position: absolute; left: 50%; top: 42%; width: 78px; transform: translate(-50%, -50%); filter: drop-shadow(0 0 14px #f1d98a); z-index: 2; }
+.reaction-copy { position: relative; z-index: 3; text-align: center; }
+.reaction-kicker { text-transform: uppercase; letter-spacing: .16em; font-size: .72rem; color: var(--reaction-accent, #f1d98a); font-weight: 800; }
+.reaction-name { font-size: clamp(1.2rem, 4vw, 1.7rem); font-weight: 850; line-height: 1.12; }
+.reaction-amount { margin-top: 3px; font-size: clamp(1.5rem, 5vw, 2.1rem); font-weight: 900; color: #fff4c4; }
+.reaction-amount small { font-size: .58em; font-weight: 700; opacity: .82; }
+.reaction-hint { position: relative; z-index: 3; text-align: center; margin-top: 7px; font-size: .68rem; opacity: .64; }
+
+.free-spin-panel { text-align: center; border-color: #f1d98a; --reaction-accent: #f1d98a; padding-top: 92px; }
+.free-spin-tree { position: absolute; z-index: 3; width: 112px; left: 50%; top: 4px; transform: translateX(-50%); filter: drop-shadow(0 0 18px rgba(241,217,138,.9)); }
+.free-spin-roster { position: absolute; inset: 8px 8px auto; display: flex; justify-content: space-between; opacity: .3; }
+.free-spin-roster img { width: 55px; height: 55px; object-fit: contain; }
+.free-spin-title { position: relative; z-index: 4; font-size: clamp(1.55rem, 6vw, 2.3rem); font-weight: 900; color: #fff4c4; text-transform: uppercase; letter-spacing: .04em; }
+.free-spin-award { position: relative; z-index: 4; margin-top: 5px; font-size: clamp(1.15rem, 4.5vw, 1.7rem); font-weight: 850; color: #f1d98a; }
+.free-spin-detail { position: relative; z-index: 4; margin: 9px auto 0; max-width: 34ch; font-size: .82rem; opacity: .82; }
+.free-spin-layer.is-retrigger .free-spin-panel { width: min(78%, 340px); padding-top: 76px; }
+.free-spin-layer.is-retrigger .free-spin-tree { width: 88px; }
+.free-spin-summary-grid { position: relative; z-index: 4; display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; margin-top: 13px; }
+.free-spin-summary-grid[hidden] { display: none; }
+.free-spin-summary-grid div { padding: 8px; border-radius: 10px; background: rgba(255,255,255,.055); }
+.free-spin-summary-grid span { display: block; font-size: .64rem; text-transform: uppercase; letter-spacing: .08em; opacity: .68; }
+.free-spin-summary-grid strong { display: block; margin-top: 2px; font-size: 1.03rem; color: #fff4c4; }
+
+.symbol-cell.is-reaction-win { z-index: 3; transform: translateY(-2px) scale(1.035); filter: drop-shadow(0 0 10px var(--reaction-cell-accent, #f1d98a)); }
+.symbol-cell.is-trigger-tree { z-index: 4; filter: drop-shadow(0 0 15px #f1d98a); animation: treeTriggerPulse .75s ease-in-out infinite alternate; }
+
+@keyframes reactionLift { from { opacity: 0; transform: translateY(14px) scale(.94); } to { opacity: 1; transform: none; } }
+@keyframes reactionPulse { 50% { opacity: .55; transform: scale(1.06); } }
+@keyframes treeTriggerPulse { to { transform: scale(1.06); } }
+
+@media (max-width: 520px) {
+  .free-spins-hud { margin-inline: 8px; gap: 4px; }
+  .reaction-layer, .free-spin-layer { padding: 8px; }
+  .reaction-panel { border-radius: 15px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reaction-layer,
+  .free-spin-layer,
+  .reaction-panel,
+  .free-spin-panel { transition-duration: 90ms; }
+  .reaction-aura,
+  .reaction-portrait,
+  .symbol-cell.is-trigger-tree { animation: none !important; }
+  .reaction-portrait { opacity: 1; }
+}

@@ -2,15 +2,15 @@
   "use strict";
   const app = globalThis.CommuneFortune;
   const { CONFIG, GAME_STATES } = app;
+  const FS = app.freeSpins.FREE_SPIN_STATUSES;
   const ui = app.ui.createUI();
-
   let state = app.persistence.loadState();
-  let phase = state.pendingSpin ? GAME_STATES.RESOLVING : GAME_STATES.IDLE;
-  let presentationAbortController = null;
-  let presentationCleanup = null;
-  let activeSpinResult = state.pendingSpin || null;
-  let manualStopSnapshot = null;
-  state.gamePhase = phase;
+  let phase = app.freeSpins.getSessionPhase(state.freeSpinSession, state.pendingSpin);
+  let aborter = null;
+  let cleanup = null;
+  let manualStops = null;
+  let currentResult = state.pendingSpin;
+  let loop = null;
 
   const audio = app.audio.createAudio(() => state.sound);
   const statistics = app.statistics.createStatistics();
@@ -18,437 +18,224 @@
     reelGrid: ui.elements.reelGrid,
     playTick: audio.playTick,
     playReelStop: audio.playReelStop,
-    onReelStop: (reelIndex, options) => app.effects.reelImpact(ui.elements.machine, ui.elements.reelFrame, reelIndex, options),
+    onReelStop: (index, options) => app.effects.reelImpact(ui.elements.machine, ui.elements.reelFrame, index, options),
     onAnticipation: (level, active) => {
       ui.setAnticipation(level, active);
       app.effects.setAnticipation(ui.elements.machine, reels.getReelElements(), level, active);
       if (active) audio.playAnticipation(level);
     },
-    onManualStopStateChange: snapshot => {
-      manualStopSnapshot = snapshot;
-      if (phase === GAME_STATES.SPINNING) updateDisplay();
-    },
+    onManualStopStateChange: value => { manualStops = value; render(); },
   });
 
-  const allowedTransitions = {
-    [GAME_STATES.IDLE]: new Set([GAME_STATES.SPINNING]),
-    [GAME_STATES.SPINNING]: new Set([GAME_STATES.RESOLVING, GAME_STATES.IDLE]),
-    [GAME_STATES.RESOLVING]: new Set([GAME_STATES.CELEBRATING, GAME_STATES.IDLE]),
-    [GAME_STATES.CELEBRATING]: new Set([GAME_STATES.IDLE]),
-  };
-
-  const getLineBet = () => app.payouts.getLineBet(state);
-  const getTotalBet = () => app.payouts.getTotalBet(state);
-  const isBusy = () => phase !== GAME_STATES.IDLE;
-  const isDevelopmentHost = globalThis.location && (
-    globalThis.location.protocol === "file:"
-    || globalThis.location.hostname === "localhost"
-    || globalThis.location.hostname === "127.0.0.1"
-  );
-  let forcedOutcomeConsumed = false;
-
-  function readDevelopmentForcedOutcome() {
-    if (!isDevelopmentHost || forcedOutcomeConsumed || !globalThis.location) return null;
-    const params = new URLSearchParams(globalThis.location.search);
-    const rawStops = params.get("debugStops");
-    if (!rawStops) return null;
-    const targetStops = rawStops.split(",").map(Number);
-    if (targetStops.length !== CONFIG.reels.length || targetStops.some((stop, reel) => !Number.isInteger(stop) || stop < 0 || stop >= CONFIG.reels[reel].length)) {
-      console.warn("Ignored invalid debugStops query value.");
-      return null;
-    }
-    const rawRoll = params.get("debugRoll");
-    const roll = rawRoll === null ? null : Number(rawRoll);
-    if (roll !== null && (!Number.isInteger(roll) || roll < 0 || roll >= CONFIG.expandingWild.outcomes)) {
-      console.warn("Ignored invalid debugRoll query value.");
-      return null;
-    }
-    forcedOutcomeConsumed = true;
-    return { targetStops, roll };
-  }
-
-  function createResultId() {
-    if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
-    return `spin-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  }
-
-  function saveState() {
-    state.gamePhase = phase;
-    app.persistence.saveState(state);
-  }
-
-  function setPhase(nextPhase, { force = false, persist = false } = {}) {
-    if (!force && nextPhase !== phase && !allowedTransitions[phase]?.has(nextPhase)) throw new Error(`Invalid game-state transition: ${phase} -> ${nextPhase}`);
-    phase = nextPhase;
-    state.gamePhase = nextPhase;
-    if (persist) saveState();
-  }
-
-  function updateDisplay() {
+  const id = prefix => globalThis.crypto?.randomUUID?.() || `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const activeSession = () => state.freeSpinSession?.active;
+  const lineBet = () => activeSession() ? state.freeSpinSession.lockedLineBet : app.payouts.getLineBet(state);
+  const totalBet = () => activeSession() ? state.freeSpinSession.referenceBet : app.payouts.getTotalBet(state);
+  function save() { state.gamePhase = phase; app.persistence.saveState(state); }
+  function setPhase(value, persist = false) { phase = value; state.gamePhase = value; if (persist) save(); }
+  function render() {
     ui.updateDisplay({
-      state,
-      phase,
-      lineBet: getLineBet(),
-      totalBet: getTotalBet(),
-      manualStopState: manualStopSnapshot,
-      fortuneSpinActive: Boolean(activeSpinResult?.fortuneSpin?.active && phase !== GAME_STATES.IDLE),
+      state, phase, lineBet: lineBet(), totalBet: totalBet(), manualStopState: manualStops,
+      fortuneSpinActive: Boolean(currentResult?.fortuneSpin?.active && phase !== GAME_STATES.IDLE),
     });
   }
-
-  function chooseLossMessage(result = null) {
-    if (result?.fortuneSpin?.active) return "The Fortune Spin was consumed. No win this time.";
-    const messages = ["No line this time.", "Close. Give it another spin.", "The Commons keeps its coins this round.", "Nothing matched across an active line.", "A cold spin. The next one may turn."];
-    return messages[Math.floor(Math.random() * messages.length)];
+  function setMessage(result) {
+    if (!result.totalWin) return ui.showMessage(result.spinType === "free" ? "No win on this free spin." : "No line this time.");
+    const lines = result.lineWins.length ? `${result.lineWins.length} winning line${result.lineWins.length === 1 ? "" : "s"}` : "No ordinary line win";
+    const combo = result.combinationWins.length ? ` plus ${result.combinationWins.map(win => win.name).join(", ")}` : "";
+    ui.showMessage(`${lines}${combo}. You won ${ui.formatNumber(result.totalWin)} coins!`, true);
   }
-
-  function settlePendingSpin() {
-    return app.payouts.settlePendingSpinState(state);
+  function clearPresentation() {
+    cleanup?.(); cleanup = null; aborter = null;
+    ui.hideCelebration(); ui.hideReaction(); ui.hideCombinationCallout(); ui.hideFortuneResult();
+    ui.clearAwakeningMark(); ui.clearCombinationMarks(); ui.clearTriggerTrees();
   }
-
-  function recoverPendingSpin() {
-    if (!state.pendingSpin) {
-      setPhase(GAME_STATES.IDLE, { force: true });
-      activeSpinResult = null;
-      return false;
-    }
-    const meterBefore = app.payouts.normalizeFortuneMeter(state.fortuneMeter);
-    const recovered = settlePendingSpin();
-    setPhase(GAME_STATES.IDLE, { force: true });
-    activeSpinResult = null;
-    saveState();
-    if (recovered?.fortuneMeterAward?.totalPoints > 0 || recovered?.fortuneMeterAward?.jackpotCharge) {
-      ui.animateFortuneGain({
-        from: meterBefore.value,
-        to: state.fortuneMeter.value,
-        award: recovered.fortuneMeterAward,
-        charged: state.fortuneMeter.charged,
-      });
-    }
-    if (recovered?.totalWin > 0) ui.showMessage(`Recovered an interrupted spin and credited ${ui.formatNumber(recovered.totalWin)} coins.`, true);
-    else ui.showMessage("Recovered an interrupted spin. No win was due.");
-    return true;
+  function signal(free = false) {
+    aborter ||= new AbortController();
+    if (!free) setPhase(GAME_STATES.CELEBRATING, true);
+    ui.setPrimaryAction("skip"); ui.setControlsDisabled(true, state, { allowSpin: true }); render();
+    return aborter.signal;
   }
-
-  function getWinMessage(result) {
-    const linePart = result.lineWins.length
-      ? `${result.lineWins.length} winning line${result.lineWins.length === 1 ? "" : "s"}`
-      : "No ordinary line win";
-    const combinationPart = result.combinationWins.length ? ` plus ${result.combinationWins.map(win => win.name).join(", ")}` : "";
-    const fortunePart = result.fortuneSpin?.active && result.fortuneBonus > 0 ? ` Fortune added ${ui.formatNumber(result.fortuneBonus)} coins.` : "";
-    return `${linePart}${combinationPart}. You won ${ui.formatNumber(result.totalWin)} coins!${fortunePart}`;
+  async function restore(result) {
+    if (!result?.targetStops || JSON.stringify(reels.getCurrentTopStops()) === JSON.stringify(result.targetStops)) return;
+    ui.setSpinning(true);
+    await reels.spinTo(result.targetStops, { anticipation: "none", reducedMotion: true, dramaEnabled: false, manualStopsEnabled: false });
+    ui.setSpinning(false);
   }
-
-  function ensurePresentationMode() {
-    if (phase === GAME_STATES.RESOLVING) setPhase(GAME_STATES.CELEBRATING, { persist: true });
-    if (!presentationAbortController) presentationAbortController = new AbortController();
-    ui.setPrimaryAction("skip");
-    ui.setControlsDisabled(true, state, { allowSpin: true });
-    return presentationAbortController.signal;
-  }
-
-  function endPresentationMode() {
-    presentationCleanup?.();
-    presentationCleanup = null;
-    presentationAbortController = null;
-    ui.hideCelebration();
-    ui.hideCombinationCallout();
-    ui.hideFortuneResult();
-    ui.setPrimaryAction("spin");
-    if (phase !== GAME_STATES.IDLE) setPhase(GAME_STATES.IDLE, { force: true, persist: true });
-  }
-
-  async function presentFeatureSequence(result) {
+  async function presentFeatures(result, free) {
     if (!result.transformations.length && !result.combinationWins.length) return;
-    const signal = ensurePresentationMode();
-    const reducedMotion = app.effects.prefersReducedMotion();
-
+    const s = signal(free); const reduced = app.effects.prefersReducedMotion();
     if (result.transformations.some(item => item.type === "expanding-wild")) {
-      ui.markAwakeningSource(result, reels);
-      audio.playAwakening();
-      await app.effects.presentExpandingWild({ elements: ui.elements, reducedMotion, signal });
+      ui.markAwakeningSource(result, reels); audio.playAwakening();
+      await app.effects.presentExpandingWild({ elements: ui.elements, reducedMotion: reduced || free, signal: s });
       ui.clearAwakeningMark();
     }
-
-    if (signal.aborted) return;
-    const combinationWin = result.combinationWins[0];
-    if (combinationWin) {
-      ui.markCombination(combinationWin, result, reels);
-      ui.showCombinationCallout(combinationWin);
-      audio.playCombination(combinationWin.id === "full-commune");
-      await app.effects.presentCombination({ combinationWin, elements: ui.elements, reducedMotion, signal });
-      ui.hideCombinationCallout();
-      ui.clearCombinationMarks();
+    if (!s.aborted && result.combinationWins[0]) {
+      const win = result.combinationWins[0];
+      ui.markCombination(win, result, reels); ui.showCombinationCallout(win); audio.playCombination(win.id === "full-commune");
+      await app.effects.presentCombination({ combinationWin: win, elements: ui.elements, reducedMotion: reduced || free, signal: s });
+      ui.hideCombinationCallout(); ui.clearCombinationMarks();
     }
   }
-
-  async function presentFortuneModifier(result) {
-    if (!result.fortuneSpin?.active || result.totalWin <= 0) return;
-    const signal = ensurePresentationMode();
-    if (signal.aborted) return;
-    ui.showFortuneResult(result);
-    await app.effects.wait(app.effects.prefersReducedMotion() ? 380 : 900, { signal });
-    ui.hideFortuneResult();
-  }
-
-  function presentSmallWin(result, tier) {
-    ui.markWins(result.lineWins, reels, tier);
-    ui.setWinDisplay(result.totalWin);
-    ui.showMessage(getWinMessage(result), true);
-    audio.playTierSound("small");
-    app.effects.burstCoins(Math.min(30, 10 + result.lineWins.length * 6 + result.combinationWins.length * 8), ui.elements.reelFrame, {
-      reducedMotion: app.effects.prefersReducedMotion(),
-      spread: 0.72,
-    });
-  }
-
-  async function presentCelebration(result, tier) {
-    const reducedMotion = app.effects.prefersReducedMotion();
-    const signal = ensurePresentationMode();
-    const dominantKey = app.payouts.getDominantWinningSymbol(result.lineWins);
-    const dominantName = dominantKey ? CONFIG.symbols[dominantKey].name : null;
-    const countUpDuration = app.gameFlow.getCountUpDuration(tier, { reducedMotion });
-    const celebrationDuration = app.gameFlow.getCelebrationDuration(tier, { reducedMotion });
-
-    ui.markWins(result.lineWins, reels, tier);
-    ui.showCelebration({ tier, dominantName });
-    ui.showMessage(`${tier === "jackpot" ? "Commune Jackpot" : tier === "big" ? "Big Win" : "Nice Win"}!`, true);
-    presentationCleanup = app.effects.startTierEffects({ tier, elements: ui.elements, reducedMotion });
-    audio.playTierSound(tier);
-
-    await Promise.all([
-      app.effects.countUp({ totalWin: result.totalWin, duration: countUpDuration, signal, onUpdate: ui.updateCelebrationAmount }),
-      app.effects.wait(celebrationDuration, { signal }),
-    ]);
-
-    ui.updateCelebrationAmount(result.totalWin);
-    ui.announceCelebration({ tier, totalWin: result.totalWin });
-    ui.showMessage(getWinMessage(result), true);
-    endPresentationMode();
-  }
-
-  async function presentResult(result) {
-    if (presentationAbortController?.signal.aborted) {
-      ui.setWinDisplay(result.totalWin);
-      ui.showMessage(result.totalWin > 0 ? getWinMessage(result) : chooseLossMessage(result), result.totalWin > 0);
-      endPresentationMode();
-      return;
-    }
-
-    if (result.totalWin <= 0) {
-      ui.showMessage(chooseLossMessage(result));
-      audio.playLossSound();
-      if (phase === GAME_STATES.CELEBRATING) endPresentationMode();
-      return;
-    }
-
+  async function presentResult(result, free = false, featuresAlreadyPresented = false) {
+    if (!featuresAlreadyPresented) await presentFeatures(result, free);
+    const reduced = app.effects.prefersReducedMotion();
     const tier = app.gameFlow.getPresentationTier(result, CONFIG.features.winTiers);
-    if (!CONFIG.features.winTiers || !app.gameFlow.isLongCelebrationTier(tier)) {
-      presentSmallWin(result, tier);
-      if (phase === GAME_STATES.CELEBRATING) endPresentationMode();
+    const reaction = app.reactions.selectReaction(result, { enabled: CONFIG.features.characterReactions, compact: free, reducedMotion: reduced });
+    const model = app.reactions.createReactionPresentationModel(reaction);
+    setMessage(result);
+    if (!result.totalWin) {
+      audio.playLossSound();
+      if (free) await app.effects.wait(reduced ? 100 : 260, { signal: signal(true) });
       return;
     }
-    await presentCelebration(result, tier);
-  }
-
-  async function spin() {
-    if (isBusy()) return;
-    const totalBet = getTotalBet();
-    if (state.coins < totalBet) {
-      ui.showMessage("Not enough coins. Lower the bet or refill.");
-      audio.playErrorSound();
+    ui.markWins(result.lineWins, reels, tier, { reaction: Boolean(reaction) }); ui.setWinDisplay(result.totalWin);
+    const panel = model && (app.gameFlow.isLongCelebrationTier(tier) || reaction.level === "combination");
+    if (!panel) {
+      audio.playTierSound("small"); app.effects.burstCoins(16, ui.elements.reelFrame, { reducedMotion: reduced, spread: 0.72 });
+      if (free) await app.effects.wait(reduced ? 100 : 300, { signal: signal(true) });
       return;
     }
-
-    setPhase(GAME_STATES.SPINNING);
-    ui.clearWins();
-    ui.clearFeaturePresentation();
-    ui.hideCelebration();
-    ui.setSpinning(true);
-    ui.showMessage(state.fortuneMeter?.charged ? "Fortune Spin activated." : "The reels are turning…");
-    audio.playSpinStart();
-
-    try {
-      await app.bonuses.beforeSpin({ state, totalBet });
-      const forcedOutcome = readDevelopmentForcedOutcome();
-      const targetStops = forcedOutcome?.targetStops || reels.randomStops();
-      const spinResult = app.payouts.createSpinResult({
-        targetStops,
-        state,
-        id: createResultId(),
-        featureRolls: forcedOutcome?.roll === null || forcedOutcome?.roll === undefined
-          ? null
-          : { expandingWild: { roll: forcedOutcome.roll } },
-      });
-
-      app.payouts.consumeFortuneChargeState(state, spinResult);
-      state.coins -= totalBet;
-      state.lastWin = 0;
-      state.pendingSpin = spinResult;
-      activeSpinResult = spinResult;
-      saveState();
-      updateDisplay();
-
-      await reels.spinTo(spinResult.targetStops, {
-        anticipation: CONFIG.features.spinDrama ? spinResult.anticipation : "none",
-        reducedMotion: app.effects.prefersReducedMotion(),
-        dramaEnabled: CONFIG.features.spinDrama,
-        manualStopsEnabled: CONFIG.features.manualStops,
-      });
-      ui.setSpinning(false);
-      setPhase(GAME_STATES.RESOLVING);
-
-      const meterBeforeSettlement = app.payouts.normalizeFortuneMeter(state.fortuneMeter);
-      const settledResult = settlePendingSpin();
-      if (!settledResult) throw new Error("Spin result was already settled or unavailable.");
-      saveState();
-      statistics.recordSpin({ wager: settledResult.wager, payout: settledResult.totalWin });
-      ui.animateFortuneGain({
-        from: meterBeforeSettlement.value,
-        to: state.fortuneMeter.value,
-        award: settledResult.fortuneMeterAward,
-        charged: state.fortuneMeter.charged,
-      });
-      updateDisplay();
-
-      await presentFeatureSequence(settledResult);
-      await presentFortuneModifier(settledResult);
-      await app.bonuses.afterSpin({ state, spinResult: settledResult });
-      await presentResult(settledResult);
-
-      if (phase === GAME_STATES.RESOLVING) setPhase(GAME_STATES.IDLE);
-      saveState();
-    } catch (error) {
-      console.error(error);
-      presentationAbortController?.abort();
-      presentationCleanup?.();
-      presentationAbortController = null;
-      presentationCleanup = null;
-      ui.hideCelebration();
-      ui.clearFeaturePresentation();
-      ui.setAnticipation("none", false);
-      const meterBeforeSettlement = app.payouts.normalizeFortuneMeter(state.fortuneMeter);
-      const recovered = settlePendingSpin();
-      if (recovered) {
-        ui.animateFortuneGain({
-          from: meterBeforeSettlement.value,
-          to: state.fortuneMeter.value,
-          award: recovered.fortuneMeterAward,
-          charged: state.fortuneMeter.charged,
-        });
-      }
-      setPhase(GAME_STATES.IDLE, { force: true });
-      saveState();
-      ui.setSpinning(false);
-      if (recovered?.totalWin > 0) ui.showMessage(`The animation was interrupted, but ${ui.formatNumber(recovered.totalWin)} coins were safely credited.`, true);
-      else ui.showMessage("The spin was interrupted and safely resolved. Try again.");
-    } finally {
-      if (phase !== GAME_STATES.IDLE) setPhase(GAME_STATES.IDLE, { force: true, persist: true });
-      activeSpinResult = null;
-      manualStopSnapshot = null;
-      ui.hideCelebration();
-      ui.hideCombinationCallout();
-      ui.hideFortuneResult();
-      ui.setFortuneSpinActive(false);
-      ui.setPrimaryAction("spin");
-      ui.setControlsDisabled(false, state);
-      updateDisplay();
-    }
+    const s = signal(free); const shownTier = reaction.level === "combination" ? "nice" : tier;
+    ui.showReaction(model, { tier: reaction.level || shownTier, compact: free }); ui.updateReactionAmount(0);
+    model.type === "character" ? audio.playCharacterReaction(shownTier) : audio.playGroupReaction();
+    audio.playTierSound(shownTier); cleanup = app.effects.startTierEffects({ tier: shownTier, elements: ui.elements, reducedMotion: reduced });
+    await Promise.all([
+      app.effects.countUp({ totalWin: result.totalWin, duration: app.gameFlow.getCountUpDuration(shownTier, { reducedMotion: reduced, compact: free }), signal: s, onUpdate: ui.updateReactionAmount }),
+      app.effects.wait(app.gameFlow.getCelebrationDuration(shownTier, { reducedMotion: reduced, compact: free }), { signal: s }),
+    ]);
+    ui.updateReactionAmount(result.totalWin);
   }
-
-  function skipCelebration() {
-    if (phase !== GAME_STATES.CELEBRATING || !presentationAbortController) return false;
-    presentationAbortController.abort();
-    return true;
-  }
-
-  function requestManualStop() {
-    if (phase !== GAME_STATES.SPINNING || !CONFIG.features.manualStops) return false;
-    const request = reels.requestNextStop();
-    if (!request.accepted) return false;
-    manualStopSnapshot = reels.getManualStopState();
-    updateDisplay();
-    return true;
-  }
-
-  function handlePrimaryAction() {
-    return app.gameFlow.routePrimaryAction({
-      phase,
+  function settle() { return app.payouts.settlePendingSpinState(state); }
+  async function spinAnimation(result) {
+    ui.setSpinning(true); audio.playSpinStart();
+    await reels.spinTo(result.targetStops, {
+      anticipation: CONFIG.features.spinDrama ? result.anticipation : "none",
+      reducedMotion: app.effects.prefersReducedMotion(), dramaEnabled: CONFIG.features.spinDrama,
       manualStopsEnabled: CONFIG.features.manualStops,
-      onSpin: () => { void spin(); },
-      onStop: requestManualStop,
-      onSkip: skipCelebration,
+    });
+    ui.setSpinning(false);
+  }
+  async function paidSpin() {
+    if (phase !== GAME_STATES.IDLE || activeSession()) return;
+    const cost = app.payouts.getTotalBet(state);
+    if (state.coins < cost) { ui.showMessage("Not enough coins. Lower the bet or refill."); return audio.playErrorSound(); }
+    setPhase(GAME_STATES.SPINNING); ui.clearWins(); ui.clearFeaturePresentation(); ui.showMessage("The reels are turning…");
+    try {
+      await app.bonuses.beforeSpin({ state, totalBet: cost });
+      const result = app.payouts.createSpinResult({ targetStops: reels.randomStops(), state, id: id("spin"), spinType: "paid" });
+      app.payouts.consumeFortuneChargeState(state, result); state.coins -= result.coinCost; state.lastWin = 0; state.pendingSpin = result; currentResult = result; save(); render();
+      await spinAnimation(result); setPhase(GAME_STATES.RESOLVING);
+      const before = app.payouts.normalizeFortuneMeter(state.fortuneMeter); const done = settle();
+      statistics.recordSpin({ wager: done.referenceBet, coinCost: done.coinCost, payout: done.totalWin, spinType: "paid" }); save();
+      ui.animateFortuneGain({ from: before.value, to: state.fortuneMeter.value, award: done.fortuneMeterAward, charged: state.fortuneMeter.charged });
+      await presentResult(done); await app.bonuses.afterSpin({ state, spinResult: done }); clearPresentation();
+      if (activeSession()) await showIntro(); else setPhase(GAME_STATES.IDLE, true);
+    } catch (error) {
+      console.error(error); aborter?.abort(); clearPresentation();
+      const done = settle(); if (done) statistics.recordSpin({ wager: done.referenceBet, coinCost: done.coinCost, payout: done.totalWin, spinType: done.spinType });
+      save(); activeSession() ? await showIntro() : setPhase(GAME_STATES.IDLE, true);
+    } finally { currentResult = null; manualStops = null; ui.setSpinning(false); render(); }
+  }
+  async function showIntro() {
+    const session = state.freeSpinSession; if (!session?.active) return;
+    setPhase(GAME_STATES.BONUS, true); clearPresentation(); ui.hideFreeSpinLayer(); await restore(session.triggerResult);
+    ui.markTriggerTrees(session.triggerTreeCells, session.triggerResult, reels); ui.showFreeSpinIntro(session);
+    ui.showMessage(`${session.startingSpins} Commune Free Spins awarded.`, true); ui.setPrimaryAction("start");
+    ui.setControlsDisabled(true, state, { allowSpin: true }); audio.playFreeSpinTrigger(); render();
+  }
+  async function showSummary() {
+    if (!activeSession()) return;
+    state.freeSpinSession = app.freeSpins.markSummary(state.freeSpinSession); setPhase(GAME_STATES.BONUS, true); clearPresentation();
+    await restore(state.freeSpinSession.lastResult); const summary = app.freeSpins.getSessionSummary(state.freeSpinSession);
+    ui.showFreeSpinSummary(summary, app.reactions.createSummaryReaction(state.freeSpinSession)); ui.setPrimaryAction("continue");
+    ui.setControlsDisabled(true, state, { allowSpin: true }); ui.showMessage(`Commune Free Spins won ${ui.formatNumber(summary.accumulatedWin)} coins.`, summary.accumulatedWin > 0);
+    audio.playFreeSpinSummary(); render();
+  }
+  async function presentFree(result) {
+    setPhase(GAME_STATES.FREE_SPINS, true); const s = signal(true); await presentFeatures(result, true);
+    if (!s.aborted && result.freeSpinTrigger?.triggered) {
+      ui.markTriggerTrees(result.freeSpinTrigger.treeCells, result, reels); ui.showRetrigger(result); audio.playRetrigger();
+      await app.effects.wait(app.effects.prefersReducedMotion() ? 220 : CONFIG.characterPresentation.durations.retrigger, { signal: s });
+      ui.hideFreeSpinLayer(); ui.clearTriggerTrees();
+    }
+    await presentResult(result, true, true); clearPresentation(); ui.hideFreeSpinLayer();
+    state.freeSpinSession = app.freeSpins.markFreeSpinPresented(state.freeSpinSession, result.id); save(); render();
+  }
+  async function freeLoop() {
+    if (loop) return loop;
+    loop = (async () => {
+      try {
+        while (activeSession()) {
+          const session = state.freeSpinSession;
+          if (session.status === FS.PRESENTING) {
+            if (session.presentationSpin) { await restore(session.presentationSpin); await presentFree(session.presentationSpin); }
+            else { state.freeSpinSession = app.freeSpins.markFreeSpinPresented(session, session.lastSettledFreeSpinId); save(); }
+          } else if (session.status === FS.COMPLETE || session.remainingSpins <= 0) { await showSummary(); break; }
+          else if (session.status === FS.READY) {
+            session.status = FS.SPINNING; setPhase(GAME_STATES.FREE_SPINS); ui.clearWins(); ui.clearFeaturePresentation();
+            const result = app.payouts.createSpinResult({ targetStops: reels.randomStops(), state: app.freeSpins.getLockedSpinState(session, state), id: id("free"), spinType: "free", referenceBet: session.referenceBet, totalAwardedSpins: session.totalAwardedSpins });
+            state.pendingSpin = result; currentResult = result; save(); render(); await spinAnimation(result);
+            const done = settle(); statistics.recordSpin({ wager: done.referenceBet, coinCost: 0, payout: done.totalWin, spinType: "free" }); save(); render();
+          } else break;
+          if (state.freeSpinSession?.status === FS.READY) await app.effects.wait(app.effects.prefersReducedMotion() ? CONFIG.freeSpins.reducedMotionDelay : CONFIG.freeSpins.autoAdvanceDelay);
+        }
+      } catch (error) {
+        console.error(error); aborter?.abort(); clearPresentation(); const done = settle();
+        if (done) statistics.recordSpin({ wager: done.referenceBet, coinCost: 0, payout: done.totalWin, spinType: "free" }); save();
+        if (activeSession()) state.freeSpinSession.remainingSpins > 0 ? void freeLoop() : await showSummary();
+      } finally { loop = null; currentResult = null; manualStops = null; ui.setSpinning(false); render(); }
+    })();
+    return loop;
+  }
+  function startFreeSpins() {
+    if (!app.freeSpins.canStartFeature(state.freeSpinSession)) return false;
+    ui.clearTriggerTrees(); ui.hideFreeSpinLayer(); state.freeSpinSession.status = FS.READY; setPhase(GAME_STATES.FREE_SPINS, true);
+    audio.playFreeSpinStart(); render(); void freeLoop(); return true;
+  }
+  function continueSummary() {
+    if (phase !== GAME_STATES.BONUS || !activeSession() || ![FS.SUMMARY, FS.COMPLETE].includes(state.freeSpinSession.status)) return false;
+    ui.hideFreeSpinLayer(); state.freeSpinSession = null; state.lastWin = 0; setPhase(GAME_STATES.IDLE, true);
+    ui.showMessage("Choose a bet and spin."); ui.setControlsDisabled(false, state); render(); return true;
+  }
+  function requestStop() {
+    const moving = phase === GAME_STATES.SPINNING || (phase === GAME_STATES.FREE_SPINS && state.freeSpinSession?.status === FS.SPINNING);
+    if (!moving || !CONFIG.features.manualStops) return false;
+    const request = reels.requestNextStop(); if (!request.accepted) return false; manualStops = reels.getManualStopState(); render(); return true;
+  }
+  function skip() { if (!aborter || ![GAME_STATES.CELEBRATING, GAME_STATES.FREE_SPINS].includes(phase)) return false; aborter.abort(); return true; }
+  function primary() {
+    return app.gameFlow.routePrimaryAction({
+      phase, freeSpinStatus: state.freeSpinSession?.status, reelsMoving: phase === GAME_STATES.SPINNING || state.freeSpinSession?.status === FS.SPINNING,
+      manualStopsEnabled: CONFIG.features.manualStops, onSpin: () => void paidSpin(), onStop: requestStop, onSkip: skip, onStart: startFreeSpins, onContinue: continueSummary,
     });
   }
-
-  function adjustBet(direction) {
-    if (isBusy()) return;
-    state.lineBetIndex = Math.min(Math.max(state.lineBetIndex + direction, 0), CONFIG.lineBets.length - 1);
-    state.lastWin = 0;
-    ui.showMessage(`Line bet ${getLineBet()}. Total spin cost ${getTotalBet()} coins.`);
-    updateDisplay();
-    saveState();
-    audio.playButtonTone();
+  function bet(delta) {
+    if (phase !== GAME_STATES.IDLE || activeSession()) return;
+    state.lineBetIndex = Math.min(Math.max(state.lineBetIndex + delta, 0), CONFIG.lineBets.length - 1); state.lastWin = 0; save(); render(); audio.playButtonTone();
   }
-
-  function refill() {
-    if (isBusy()) return;
-    state.coins = CONFIG.startingCoins;
-    state.lastWin = 0;
-    ui.clearWins();
-    ui.clearFeaturePresentation();
-    ui.showMessage("Coin bank restored to 1,000.");
-    updateDisplay();
-    saveState();
-    audio.playRefillSound();
-  }
-
-  function toggleSound() {
-    state.sound = !state.sound;
-    updateDisplay();
-    saveState();
-    if (state.sound) audio.playButtonTone();
-  }
-
-  function bindEvents() {
-    ui.elements.betDown.addEventListener("click", () => adjustBet(-1));
-    ui.elements.betUp.addEventListener("click", () => adjustBet(1));
-    ui.elements.spinButton.addEventListener("click", handlePrimaryAction);
-    ui.elements.refillButton.addEventListener("click", refill);
-    ui.elements.soundButton.addEventListener("click", toggleSound);
-    ui.elements.helpButton.addEventListener("click", ui.openHelp);
-    ui.elements.closeHelp.addEventListener("click", ui.closeHelp);
+  function refill() { if (phase !== GAME_STATES.IDLE || activeSession()) return; state.coins = CONFIG.startingCoins; state.lastWin = 0; save(); ui.clearWins(); render(); audio.playRefillSound(); }
+  function bind() {
+    ui.elements.betDown.addEventListener("click", () => bet(-1)); ui.elements.betUp.addEventListener("click", () => bet(1));
+    ui.elements.spinButton.addEventListener("click", primary); ui.elements.refillButton.addEventListener("click", refill);
+    ui.elements.soundButton.addEventListener("click", () => { state.sound = !state.sound; save(); render(); if (state.sound) audio.playButtonTone(); });
+    ui.elements.helpButton.addEventListener("click", ui.openHelp); ui.elements.closeHelp.addEventListener("click", ui.closeHelp);
     ui.elements.helpModal.addEventListener("click", event => { if (event.target === ui.elements.helpModal) ui.closeHelp(); });
     document.addEventListener("keydown", event => {
       if (ui.isHelpOpen()) { if (event.key === "Escape") ui.closeHelp(); return; }
-      if ((event.code === "Space" || event.key === "Enter") && !event.repeat) { event.preventDefault(); handlePrimaryAction(); return; }
-      if (event.key === "ArrowLeft") adjustBet(-1);
-      if (event.key === "ArrowRight") adjustBet(1);
+      if ((event.code === "Space" || event.key === "Enter") && !event.repeat) { event.preventDefault(); primary(); }
+      else if (event.key === "ArrowLeft") bet(-1); else if (event.key === "ArrowRight") bet(1);
     });
-    globalThis.addEventListener("resize", () => { if (!isBusy()) reels.reposition(); });
   }
-
-  async function initialize() {
-    ui.buildPaytable();
-    ui.buildCombinationReference();
-    bindEvents();
-    await reels.buildReels();
-    const recovered = recoverPendingSpin();
-    if (!recovered) ui.showMessage("Choose a bet and spin.");
-    updateDisplay();
+  async function recover() {
+    if (state.pendingSpin) { const done = settle(); if (done) statistics.recordSpin({ wager: done.referenceBet, coinCost: done.coinCost, payout: done.totalWin, spinType: done.spinType }); save(); }
+    if (!activeSession()) { setPhase(GAME_STATES.IDLE, true); ui.showMessage("Choose a bet and spin."); return; }
+    const status = state.freeSpinSession.status;
+    if (status === FS.INTRO) return showIntro(); if ([FS.COMPLETE, FS.SUMMARY].includes(status)) return showSummary();
+    if (status === FS.SPINNING && !state.pendingSpin) { state.freeSpinSession.status = FS.READY; save(); }
+    setPhase(GAME_STATES.FREE_SPINS, true); void freeLoop();
   }
-
-  app.game = {
-    spin,
-    handlePrimaryAction,
-    requestManualStop,
-    skipCelebration,
-    adjustBet,
-    refill,
-    getState: () => ({ ...state, fortuneMeter: { ...state.fortuneMeter } }),
-    getPhase: () => phase,
-    getManualStopState: () => reels.getManualStopState(),
-    getSessionStatistics: statistics.snapshot,
-    getDevelopmentForcedOutcome: () => isDevelopmentHost ? readDevelopmentForcedOutcome() : null,
-  };
-  void initialize();
+  async function init() { ui.buildPaytable(); ui.buildCombinationReference(); bind(); await reels.buildReels(); await recover(); render(); }
+  app.game = { spin: paidSpin, handlePrimaryAction: primary, requestManualStop: requestStop, skipCelebration: skip, startFreeSpins, continueFromSummary: continueSummary, adjustBet: bet, refill, getState: () => structuredClone(state), getPhase: () => phase, getManualStopState: () => reels.getManualStopState(), getSessionStatistics: statistics.snapshot };
+  void init();
 })();

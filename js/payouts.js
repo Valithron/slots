@@ -154,11 +154,11 @@
     }));
   }
 
-  function classifyWinTier(totalWin, totalBet, thresholds = CONFIG.winTiers.thresholds) {
+  function classifyWinTier(totalWin, referenceBet, thresholds = CONFIG.winTiers.thresholds) {
     if (!Number.isFinite(totalWin) || totalWin < 0) throw new Error("totalWin must be a non-negative number.");
-    if (!Number.isFinite(totalBet) || totalBet <= 0) throw new Error("totalBet must be greater than zero.");
+    if (!Number.isFinite(referenceBet) || referenceBet <= 0) throw new Error("referenceBet must be greater than zero.");
     if (totalWin === 0) return WIN_TIERS.NONE;
-    const multiple = totalWin / totalBet;
+    const multiple = totalWin / referenceBet;
     if (multiple >= thresholds.jackpot) return WIN_TIERS.JACKPOT;
     if (multiple >= thresholds.big) return WIN_TIERS.BIG;
     if (multiple >= thresholds.nice) return WIN_TIERS.NICE;
@@ -181,17 +181,25 @@
     return ANTICIPATION_LEVELS.NONE;
   }
 
-  function getDominantWinningSymbol(lineWins) {
-    if (!Array.isArray(lineWins) || lineWins.length === 0) return null;
+  function getWinningSymbolTotals(lineWins = []) {
     const totals = new Map();
     lineWins.forEach(win => {
-      if (win.symbolKey === "TOL") return;
+      if (!win?.symbolKey || !Number.isFinite(win.payout)) return;
       totals.set(win.symbolKey, (totals.get(win.symbolKey) || 0) + win.payout);
     });
-    if (totals.size === 0) return null;
-    const ranked = [...totals.entries()].sort((a, b) => b[1] - a[1]);
-    if (ranked.length > 1 && ranked[0][1] === ranked[1][1]) return null;
-    return ranked[0][0];
+    return totals;
+  }
+
+  function getDominantWinningSymbols(lineWins) {
+    const totals = getWinningSymbolTotals(lineWins);
+    if (totals.size === 0) return [];
+    const highest = Math.max(...totals.values());
+    return [...totals.entries()].filter(([, payout]) => payout === highest).map(([key]) => key);
+  }
+
+  function getDominantWinningSymbol(lineWins) {
+    const dominant = getDominantWinningSymbols(lineWins).filter(key => key !== "TOL");
+    return dominant.length === 1 ? dominant[0] : null;
   }
 
   function getTierFortunePoints(naturalWinTier) {
@@ -248,7 +256,7 @@
   }
 
   function consumeFortuneChargeState(state, spinResult) {
-    if (!state || !spinResult?.fortuneSpin?.consumedCharge) return false;
+    if (!state || spinResult?.spinType !== "paid" || !spinResult?.fortuneSpin?.consumedCharge) return false;
     state.fortuneMeter = { value: 0, charged: false };
     return true;
   }
@@ -262,7 +270,15 @@
     featureRolls: storedFeatureRolls = null,
     createdAt = new Date().toISOString(),
     paidSpin = true,
+    spinType = paidSpin === false ? "free" : "paid",
+    referenceBet = null,
+    totalAwardedSpins = 0,
   }) {
+    if (spinType !== "paid" && spinType !== "free") throw new Error(`Unsupported spinType: ${spinType}`);
+    const isPaid = spinType === "paid";
+    const calculatedReferenceBet = Number.isFinite(referenceBet) && referenceBet > 0
+      ? Math.floor(referenceBet)
+      : getTotalBet(state);
     const originalMatrix = matrixFromStops(targetStops);
     const expandingWild = createExpandingWildRoll(originalMatrix, {
       enabled: Boolean(featureFlags.expandingWilds),
@@ -278,9 +294,10 @@
     const lineWinTotal = lineWins.reduce((sum, win) => sum + win.payout, 0);
     const combinationWinTotal = combinationWins.reduce((sum, win) => sum + win.payout, 0);
     const preModifierWin = lineWinTotal + combinationWinTotal;
-    const wager = getTotalBet(state);
-    const naturalWinTier = classifyWinTier(preModifierWin, wager);
-    const fortuneSpin = getFortuneSpinState(state, Boolean(featureFlags.fortuneMeter));
+    const naturalWinTier = classifyWinTier(preModifierWin, calculatedReferenceBet);
+    const fortuneSpin = isPaid
+      ? getFortuneSpinState(state, Boolean(featureFlags.fortuneMeter))
+      : { active: false, multiplier: CONFIG.fortuneMeter.multiplier, consumedCharge: false };
     const totalWin = fortuneSpin.active ? Math.floor(preModifierWin * fortuneSpin.multiplier) : preModifierWin;
     const fortuneBonus = totalWin - preModifierWin;
     const modifiers = fortuneSpin.active ? [{
@@ -292,15 +309,25 @@
       finalWin: totalWin,
     }] : [];
     const fortuneMeterAward = createFortuneMeterAward({
-      paidSpin,
+      paidSpin: isPaid,
       naturalWinTier,
       combinationWins,
       enabled: Boolean(featureFlags.fortuneMeter),
     });
+    const freeSpinTrigger = app.freeSpins.createFreeSpinTrigger(originalMatrix, {
+      enabled: Boolean(featureFlags.freeSpins),
+      spinType,
+      totalAwardedSpins,
+    });
     const result = {
       id,
       createdAt,
-      wager,
+      spinType,
+      paidSpin: isPaid,
+      coinCost: isPaid ? calculatedReferenceBet : 0,
+      referenceBet: calculatedReferenceBet,
+      wager: calculatedReferenceBet,
+      lineBetIndex: state.lineBetIndex,
       lineBet: getLineBet(state),
       targetStops: [...targetStops],
       originalMatrix,
@@ -312,6 +339,7 @@
       scatterWins: [],
       combinationWins,
       modifiers,
+      freeSpinTrigger,
       baseLineWinTotal,
       lineWinTotal,
       combinationWinTotal,
@@ -321,7 +349,7 @@
       fortuneBonus,
       naturalWinTier,
       totalWin,
-      finalWinTier: classifyWinTier(totalWin, wager),
+      finalWinTier: classifyWinTier(totalWin, calculatedReferenceBet),
       winTier: WIN_TIERS.NONE,
       anticipation: ANTICIPATION_LEVELS.NONE,
       settlementStatus: "pending",
@@ -334,13 +362,29 @@
   function settlePendingSpinState(state) {
     const pending = state?.pendingSpin;
     if (!pending || pending.settlementStatus !== "pending") return null;
+
     state.coins += pending.totalWin;
     state.lastWin = pending.totalWin;
     applyFortuneMeterAward(state, pending.fortuneMeterAward);
+
+    let freeSpinSettlement = null;
+    if (pending.spinType === "paid" && pending.freeSpinTrigger?.triggered && pending.freeSpinTrigger.awardedSpins > 0) {
+      if (!state.freeSpinSession?.active || state.freeSpinSession.triggerSpinId !== pending.id) {
+        state.freeSpinSession = app.freeSpins.createFreeSpinSession(pending);
+      }
+    } else if (pending.spinType === "free") {
+      freeSpinSettlement = app.freeSpins.applyFreeSpinSettlement(state.freeSpinSession, pending);
+      state.freeSpinSession = freeSpinSettlement.session;
+    }
+
     const settled = {
       ...pending,
       settlementStatus: "settled",
       fortuneMeterAfterSettlement: normalizeFortuneMeter(state.fortuneMeter),
+      freeSpinSettlement: freeSpinSettlement ? {
+        applied: freeSpinSettlement.applied,
+        retriggerApplied: freeSpinSettlement.retriggerApplied,
+      } : null,
     };
     state.pendingSpin = null;
     return settled;
@@ -364,6 +408,8 @@
     classifyWinTier,
     classifyAnticipation,
     hasPlausibleFirstTwoReelMatch,
+    getWinningSymbolTotals,
+    getDominantWinningSymbols,
     getDominantWinningSymbol,
     getTierFortunePoints,
     createFortuneMeterAward,

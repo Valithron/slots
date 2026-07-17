@@ -1,324 +1,88 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-
-const storage = new Map();
-globalThis.localStorage = {
-  getItem: key => storage.has(key) ? storage.get(key) : null,
-  setItem: (key, value) => { storage.set(key, String(value)); },
-  removeItem: key => { storage.delete(key); },
-  clear: () => storage.clear(),
-};
-
+const store = new Map();
+globalThis.localStorage = { getItem:k=>store.get(k)??null, setItem:(k,v)=>store.set(k,String(v)), removeItem:k=>store.delete(k), clear:()=>store.clear() };
 await import("../js/config.js");
+await import("../js/reactions.js");
+await import("../js/free-spins.js");
 await import("../js/payouts.js");
 await import("../js/game-flow.js");
 await import("../js/persistence.js");
-const { CONFIG, constants, payouts, gameFlow, persistence } = globalThis.CommuneFortune;
+await import("../js/statistics.js");
+const app=globalThis.CommuneFortune;
+const {CONFIG,payouts,reactions,freeSpins,persistence,statistics}=app;
+const state=(o={})=>({coins:1000,lineBetIndex:0,fortuneMeter:{value:0,charged:false},freeSpinSession:null,pendingSpin:null,lastWin:0,...o});
+const flags=o=>({...CONFIG.features,...o});
+const make=(stops,o={})=>payouts.createSpinResult({targetStops:stops,state:o.state||state(),id:o.id||"t",createdAt:"test",featureFlags:o.flags||flags({}),featureRolls:{expandingWild:{roll:o.roll??1}},spinType:o.spinType||"paid",referenceBet:o.referenceBet,totalAwardedSpins:o.totalAwardedSpins||0});
+function find(test){for(let a=0;a<24;a++)for(let b=0;b<24;b++)for(let c=0;c<24;c++)for(let roll=0;roll<4;roll++){const r=make([a,b,c],{roll});if(test(r))return {r,stops:[a,b,c],roll};}throw Error("no outcome");}
+const trigger=()=>{const f=find(r=>r.freeSpinTrigger.triggered);return make(f.stops,{roll:f.roll,id:"trigger"});};
 
-const state = (overrides = {}) => ({ lineBetIndex: 0, fortuneMeter: { value: 0, charged: false }, ...overrides });
-const flags = (wild = true, combinations = true, fortuneMeter = true) => ({
-  ...CONFIG.features,
-  expandingWilds: wild,
-  combinationBonuses: combinations,
-  fortuneMeter,
-  spinDrama: true,
-});
-const matrix = rows => rows.map(row => [...row]);
-
-function findStops(predicate, featureFlags = flags()) {
-  for (let a = 0; a < CONFIG.reels[0].length; a += 1) {
-    for (let b = 0; b < CONFIG.reels[1].length; b += 1) {
-      for (let c = 0; c < CONFIG.reels[2].length; c += 1) {
-        for (let roll = 0; roll < CONFIG.expandingWild.outcomes; roll += 1) {
-          const targetStops = [a, b, c];
-          const result = payouts.createSpinResult({
-            targetStops,
-            state: state(),
-            id: "search",
-            createdAt: "search",
-            featureFlags,
-            featureRolls: { expandingWild: { roll } },
-          });
-          if (predicate(result, targetStops, roll)) return { targetStops, roll, result };
-        }
-      }
-    }
-  }
-  throw new Error("No matching reel stops found for deterministic test.");
+function manifest(){
+ assert.deepEqual(reactions.CHARACTER_KEYS,["STR","CYD","RYN","GAB","COP","KEN","ASH"]);
+ reactions.CHARACTER_KEYS.forEach(k=>{const a=reactions.resolveReactionAsset(k,"base");assert.equal(a.source,"base");assert.match(a.path,/\?v=/);});
+ assert.equal(reactions.versionAssetUrl("a.svg?x=1#x","v 2"),"a.svg?x=1&v=v%202#x");
+ assert.equal(reactions.resolveReactionAsset("STR","nice").source,"base");
+ assert.equal(reactions.resolveReactionAsset("BAD","big").source,"generic");
 }
-
-function resultFor(targetStops, { roll = 1, meter = { value: 0, charged: false }, featureFlags = flags(), id = "test" } = {}) {
-  return payouts.createSpinResult({
-    targetStops,
-    state: state({ fortuneMeter: meter }),
-    id,
-    createdAt: "test",
-    featureFlags,
-    featureRolls: { expandingWild: { roll } },
-  });
+function reactionSelection(){
+ const unique=reactions.selectReaction({totalWin:25,winTier:"nice",lineWins:[{symbolKey:"STR",payout:25}],combinationWins:[]});assert.deepEqual(unique.characterKeys,["STR"]);
+ const tie=reactions.selectReaction({totalWin:20,winTier:"small",lineWins:[{symbolKey:"STR",payout:10},{symbolKey:"RYN",payout:10}],combinationWins:[]});assert.deepEqual(tie.characterKeys,["STR","RYN"]);
+ const tree=reactions.selectReaction({totalWin:60,winTier:"big",lineWins:[{symbolKey:"TOL",payout:60}],combinationWins:[]});assert.equal(tree.type,"tree");
+ CONFIG.combinations.definitions.forEach(d=>{const r=reactions.selectReaction({totalWin:10,winTier:"small",lineWins:[],combinationWins:[{...d,symbols:d.sequence}]});assert.deepEqual(r.characterKeys,CONFIG.characterPresentation.combinationMembers[d.id]);});
+ const full=reactions.selectReaction({totalWin:25,winTier:"nice",lineWins:[],combinationWins:[{id:"full-commune",name:"Full Commune",symbols:[...CONFIG.characterPresentation.allMembers,"TOL"]}]});assert.deepEqual(full.characterKeys,CONFIG.characterPresentation.allMembers);
+ const jackpot=reactions.selectReaction({totalWin:200,winTier:"jackpot",lineWins:[{symbolKey:"STR",payout:200}],combinationWins:[]});assert.equal(jackpot.includesTree,true);assert.equal(jackpot.characterKeys.length,7);
+ const compact=reactions.selectReaction({totalWin:30,winTier:"nice",lineWins:[{symbolKey:"CYD",payout:30}],combinationWins:[]},{compact:true,reducedMotion:true});assert.equal(compact.compact,true);assert.match(reactions.createReactionPresentationModel(compact).accessibleLabel,/Cydney/);
+ assert.equal(reactions.selectReaction({totalWin:30,winTier:"nice",lineWins:[],combinationWins:[]},{enabled:false}),null);
 }
-
-function testTreeEligibilityAndRolls() {
-  const noncenter = matrix([["TOL","STR","CYD"],["GAB","KEN","ASH"],["COP","RYN","STR"]]);
-  const center = matrix([["STR","CYD","GAB"],["ASH","TOL","KEN"],["COP","RYN","STR"]]);
-  assert.equal(payouts.isExpandingWildEligible(noncenter), false);
-  assert.equal(payouts.isExpandingWildEligible(center), true);
-  assert.equal(payouts.createExpandingWildRoll(center, { storedRoll: 0 }).activated, true);
-  [1,2,3].forEach(roll => assert.equal(payouts.createExpandingWildRoll(center, { storedRoll: roll }).activated, false));
-  assert.equal(payouts.createExpandingWildRoll(center, { enabled: false, storedRoll: 0 }).activated, false);
+function mvp(){
+ assert.equal(reactions.calculateSessionMvp({STR:40,CYD:20},{accumulatedWin:60}).reason,"unique-mvp");
+ assert.equal(reactions.calculateSessionMvp({STR:40,CYD:40},{accumulatedWin:80}).reason,"tied-mvp");
+ assert.equal(reactions.calculateSessionMvp({TOL:60,STR:20},{accumulatedWin:80}).reason,"tree-mvp");
+ assert.equal(reactions.calculateSessionMvp({},{accumulatedWin:0}).reason,"zero-win-summary");
 }
-
-function testTreeTransformationAndPaylines() {
-  const original = matrix([["STR","CYD","STR"],["GAB","TOL","GAB"],["KEN","ASH","KEN"]]);
-  const snapshot = JSON.stringify(original);
-  const roll = payouts.createExpandingWildRoll(original, { storedRoll: 0 });
-  const { resolvedMatrix, transformations } = payouts.applyExpandingWild(original, roll);
-  assert.equal(JSON.stringify(original), snapshot);
-  assert.deepEqual(resolvedMatrix, [["STR","TOL","STR"],["GAB","TOL","GAB"],["KEN","TOL","KEN"]]);
-  assert.equal(transformations.length, 1);
-  assert.equal(payouts.evaluateWins(resolvedMatrix, state()).length, 3);
-  assert.equal(payouts.evaluateLine(["TOL","TOL","TOL"]).symbolKey, "TOL");
+function triggerRules(){
+ const m=[["TOL","TOL","TOL"],["STR","CYD","RYN"],["GAB","COP","KEN"]];
+ const t=freeSpins.createFreeSpinTrigger(m,{spinType:"paid"});assert.equal(t.awardedSpins,4);assert.deepEqual(t.treeCells,[{row:0,reel:0},{row:0,reel:1},{row:0,reel:2}]);
+ assert.equal(freeSpins.createFreeSpinTrigger([["TOL","TOL","STR"],m[1],m[2]]).triggered,false);
+ assert.equal(freeSpins.createFreeSpinTrigger(m,{enabled:false}).triggered,false);
+ const awakened=find(r=>r.featureRolls.expandingWild.activated&&!r.freeSpinTrigger.triggered).r;assert.notDeepEqual(awakened.originalMatrix,awakened.resolvedMatrix);assert.equal(awakened.freeSpinTrigger.triggered,false);
+ const paid=trigger();assert.equal(paid.freeSpinTrigger.awardedSpins,4);assert.equal(paid.scatterWins.length,0);assert.equal(paid.totalWin,paid.lineWinTotal+paid.combinationWinTotal+paid.fortuneBonus);
+ const free=make(paid.targetStops,{roll:paid.featureRolls.expandingWild.roll,spinType:"free",referenceBet:paid.referenceBet,totalAwardedSpins:4});assert.equal(free.freeSpinTrigger.awardedSpins,2);assert.equal(free.freeSpinTrigger.retrigger,true);
+ assert.equal(make(paid.targetStops,{roll:paid.featureRolls.expandingWild.roll,spinType:"free",referenceBet:paid.referenceBet,totalAwardedSpins:20}).freeSpinTrigger.awardedSpins,0);
 }
-
-function testStoredRollReproductionAndReloadSafety() {
-  const { targetStops } = findStops(result => result.originalMatrix[1][1] === "TOL", flags(true, false, false));
-  const first = resultFor(targetStops, { roll: 0, featureFlags: flags(true, false, false), id: "first" });
-  const replay = payouts.createSpinResult({
-    targetStops: first.targetStops,
-    state: state(),
-    id: first.id,
-    createdAt: first.createdAt,
-    featureFlags: flags(true, false, false),
-    featureRolls: first.featureRolls,
-    rng: () => { throw new Error("RNG should not be called"); },
-  });
-  assert.deepEqual(replay.featureRolls, first.featureRolls);
-  assert.deepEqual(replay.resolvedMatrix, first.resolvedMatrix);
+function lockedMath(){
+ const paid=trigger(), session=freeSpins.createFreeSpinSession(paid,{sessionId:"s"});
+ const charged=state({lineBetIndex:3,fortuneMeter:{value:100,charged:true}}), locked=freeSpins.getLockedSpinState(session,charged);
+ assert.equal(locked.lineBetIndex,paid.lineBetIndex);
+ const free=make([7,4,5],{spinType:"free",state:locked,referenceBet:session.referenceBet,roll:0});
+ assert.equal(free.coinCost,0);assert.equal(free.referenceBet,session.referenceBet);assert.equal(free.fortuneSpin.active,false);assert.equal(free.fortuneMeterAward.totalPoints,0);assert.equal(free.fortuneBonus,0);assert.equal(payouts.consumeFortuneChargeState(charged,free),false);assert.equal(charged.fortuneMeter.charged,true);assert.ok(free.transformations.length);
 }
-
-function testNamedCombinations() {
-  CONFIG.combinations.definitions.forEach(definition => {
-    const original = matrix([["STR","CYD","GAB"], definition.sequence, ["KEN","ASH","COP"]]);
-    const wins = payouts.detectCombinationMatches(original, { enabled: true });
-    assert.equal(wins.length, 1);
-    assert.equal(wins[0].id, definition.id);
-    const reversed = matrix([["STR","CYD","GAB"], [...definition.sequence].reverse(), ["KEN","ASH","COP"]]);
-    assert.equal(payouts.detectCombinationMatches(reversed, { enabled: true }).length, 0);
-  });
+function exactlyOnce(){
+ const paid=trigger(), s=state({coins:500,pendingSpin:structuredClone(paid)});s.coins-=paid.coinCost;const before=s.coins;assert.ok(payouts.settlePendingSpinState(s));assert.equal(s.coins,before+paid.totalWin);assert.equal(s.freeSpinSession.startingSpins,4);assert.equal(payouts.settlePendingSpinState(s),null);
+ s.freeSpinSession.status=freeSpins.FREE_SPIN_STATUSES.READY;
+ const free=make(paid.targetStops,{id:"free",roll:paid.featureRolls.expandingWild.roll,spinType:"free",state:freeSpins.getLockedSpinState(s.freeSpinSession,s),referenceBet:s.freeSpinSession.referenceBet,totalAwardedSpins:4});s.pendingSpin=free;const coins=s.coins,done=payouts.settlePendingSpinState(s);assert.equal(s.coins,coins+free.totalWin);assert.equal(s.freeSpinSession.accumulatedWin,free.totalWin);assert.equal(done.freeSpinSettlement.retriggerApplied,2);assert.equal(payouts.settlePendingSpinState(s),null);
+ const duplicate=freeSpins.applyFreeSpinSettlement(s.freeSpinSession,free);assert.equal(duplicate.applied,false);
+ const summaryCoins=s.coins;freeSpins.getSessionSummary(s.freeSpinSession);freeSpins.markSummary(s.freeSpinSession);assert.equal(s.coins,summaryCoins);
 }
-
-function fullCommuneMatrix() {
-  return matrix([["STR","CYD","RYN"],["GAB","TOL","COP"],["KEN","ASH","STR"]]);
+function capAndContributions(){
+ const paid=trigger();let session=freeSpins.createFreeSpinSession(paid);session.totalAwardedSpins=19;session.remainingSpins=1;session.completedSpins=18;
+ const free=make(paid.targetStops,{id:"cap",roll:paid.featureRolls.expandingWild.roll,spinType:"free",state:freeSpins.getLockedSpinState(session,state()),referenceBet:session.referenceBet,totalAwardedSpins:19});const applied=freeSpins.applyFreeSpinSettlement(session,free);assert.equal(applied.session.totalAwardedSpins,20);assert.equal(applied.retriggerApplied,1);
+ session=freeSpins.createFreeSpinSession(paid);session=freeSpins.applyFreeSpinSettlement(session,{id:"c",spinType:"free",totalWin:50,lineWins:[{symbolKey:"STR",payout:25},{symbolKey:"TOL",payout:20}],combinationWins:[{id:"household",payout:5}],freeSpinTrigger:{triggered:false,retrigger:true,awardedSpins:0}}).session;assert.equal(session.characterWinTotals.STR,25);assert.equal(session.characterWinTotals.TOL,20);assert.equal(Object.values(session.characterWinTotals).reduce((a,b)=>a+b,0),45);
 }
-
-function testFullCommuneRequirementsAndPriority() {
-  const full = payouts.detectCombinationMatches(fullCommuneMatrix(), { enabled: true });
-  assert.equal(full.length, 1);
-  assert.equal(full[0].id, "full-commune");
-  const missingMember = matrix([["STR","CYD","RYN"],["GAB","TOL","COP"],["KEN","STR","STR"]]);
-  assert.equal(payouts.detectCombinationMatches(missingMember, { enabled: true }).length, 0);
+function persistenceRecovery(){
+ store.clear();store.set(app.constants.legacyStorageKeys[0],JSON.stringify({coins:700,lineBetIndex:2}));assert.equal(persistence.loadState().freeSpinSession,null);
+ const paid=trigger(), base=freeSpins.createFreeSpinSession(paid,{sessionId:"persist"});
+ for(const status of ["intro","ready","presenting","complete","summary"]){store.clear();const staged=structuredClone(base);staged.status=status;if(status==="presenting"){staged.presentationSpin=make([0,0,0],{id:"p",spinType:"free",state:freeSpins.getLockedSpinState(staged,state()),referenceBet:staged.referenceBet});staged.lastSettledFreeSpinId="p";}if(status==="complete"||status==="summary"){staged.completedSpins=staged.totalAwardedSpins;staged.remainingSpins=0;}persistence.saveState({...state(),freeSpinSession:staged,gamePhase:freeSpins.getSessionPhase(staged)});assert.equal(persistence.loadState().freeSpinSession.status,status);}
+ const session=freeSpins.createFreeSpinSession(paid,{sessionId:"recover"});session.status="spinning";const pending=make([7,4,5],{id:"pending",spinType:"free",state:freeSpins.getLockedSpinState(session,state({fortuneMeter:{value:100,charged:true}})),referenceBet:session.referenceBet,roll:0});store.clear();persistence.saveState({...state({coins:333,fortuneMeter:{value:100,charged:true}}),freeSpinSession:session,pendingSpin:pending,gamePhase:app.GAME_STATES.FREE_SPINS});const loaded=persistence.loadState(),coins=loaded.coins;payouts.settlePendingSpinState(loaded);assert.equal(loaded.coins,coins+pending.totalWin);assert.equal(loaded.fortuneMeter.charged,true);assert.equal(loaded.freeSpinSession.presentationSpin.id,"pending");assert.equal(payouts.settlePendingSpinState(loaded),null);
 }
-
-function testPayoutScalingAndStacking() {
-  CONFIG.combinations.definitions.forEach(definition => {
-    CONFIG.lineBets.forEach((lineBet, lineBetIndex) => {
-      const matches = [{ ...definition, symbols: definition.sequence, cells: definition.sequence.map((_, reel) => ({ row: 1, reel })) }];
-      const [award] = payouts.calculateCombinationWins(matches, { lineBetIndex });
-      assert.equal(award.payout, definition.multiplier * lineBet);
-    });
-  });
-  const found = findStops(result => result.lineWinTotal > 0 && result.combinationWinTotal > 0, flags(false, true, false));
-  assert.equal(found.result.totalWin, found.result.lineWinTotal + found.result.combinationWinTotal);
+function statisticsAndFlags(){
+ const stats=statistics.createStatistics();stats.recordSpin({coinCost:5,payout:10,spinType:"paid"});stats.recordSpin({coinCost:0,payout:20,spinType:"free"});const snap=stats.snapshot();assert.equal(snap.coinsWagered,5);assert.equal(snap.paidSpins,1);assert.equal(snap.freeSpins,1);
+ const stops=trigger().targetStops;for(const characterReactions of [false,true])for(const freeSpinsEnabled of [false,true]){const r=make(stops,{flags:flags({characterReactions,freeSpins:freeSpinsEnabled})});assert.equal(r.freeSpinTrigger.triggered,freeSpinsEnabled);assert.equal(Boolean(reactions.selectReaction(r,{enabled:characterReactions})),characterReactions&&r.totalWin>0);}
+ const off=make(stops,{flags:flags({freeSpins:false})});assert.equal(off.freeSpinTrigger.triggered,false);
 }
-
-function testResultTotalsTierCountUpAndSettlement() {
-  const found = findStops(result => result.originalMatrix[1][1] === "TOL", flags(true, true, false));
-  const result = resultFor(found.targetStops, { roll: 0, featureFlags: flags(true, true, false), id: "totals" });
-  assert.equal(result.lineWinTotal, result.lineWins.reduce((sum, win) => sum + win.payout, 0));
-  assert.equal(result.combinationWinTotal, result.combinationWins.reduce((sum, win) => sum + win.payout, 0));
-  assert.equal(result.preModifierWin, result.lineWinTotal + result.combinationWinTotal);
-  assert.equal(result.totalWin, result.preModifierWin);
-  assert.equal(result.winTier, payouts.classifyWinTier(result.totalWin, result.wager));
-  assert.equal(gameFlow.getCountUpValue(result.totalWin, 1), result.totalWin);
-  const savedState = { coins: 100, lastWin: 0, fortuneMeter: { value: 0, charged: false }, pendingSpin: structuredClone(result) };
-  const settled = payouts.settlePendingSpinState(savedState);
-  assert.equal(savedState.coins, 100 + result.totalWin);
-  assert.equal(savedState.lastWin, result.totalWin);
-  assert.equal(settled.totalWin, result.totalWin);
-  assert.equal(payouts.settlePendingSpinState(savedState), null);
+function regressions(){
+ const auto=make([7,4,5],{roll:0,flags:flags({manualStops:false,characterReactions:false,freeSpins:false})});const manual=make([7,4,5],{roll:0,flags:flags({manualStops:true,characterReactions:true,freeSpins:false})});for(const k of ["targetStops","originalMatrix","resolvedMatrix","featureRolls","lineWins","combinationWins","fortuneMeterAward","totalWin","winTier"])assert.deepEqual(manual[k],auto[k]);
+ const s=state({coins:100,pendingSpin:auto}),before=s.coins;payouts.settlePendingSpinState(s);assert.equal(s.coins,before+auto.totalWin);assert.equal(payouts.settlePendingSpinState(s),null);
 }
-
-function testFeatureFlagConfigurations() {
-  const wild = findStops(result => result.originalMatrix[1][1] === "TOL", flags(false, false, false));
-  const combo = findStops(result => result.combinationWins.length > 0, flags(false, true, false));
-  [[false,false],[true,false],[false,true],[true,true]].forEach(([wildEnabled, combinationEnabled]) => {
-    const wildResult = resultFor(wild.targetStops, { roll: 0, featureFlags: flags(wildEnabled, combinationEnabled, false) });
-    const comboResult = resultFor(combo.targetStops, { roll: combo.roll, featureFlags: flags(wildEnabled, combinationEnabled, false) });
-    assert.equal(wildResult.featureRolls.expandingWild.activated, wildEnabled);
-    assert.equal(comboResult.combinationWins.length, combinationEnabled ? 1 : 0);
-  });
-}
-
-function testFortuneStateNormalizationAndMigration() {
-  assert.deepEqual(persistence.normalizeFortuneMeter(null), { value: 0, charged: false });
-  assert.deepEqual(persistence.normalizeFortuneMeter({ value: -20, charged: true }), { value: 0, charged: false });
-  assert.deepEqual(persistence.normalizeFortuneMeter({ value: 101, charged: false }), { value: 100, charged: true });
-  assert.deepEqual(persistence.normalizeFortuneMeter({ value: 100, charged: false }), { value: 100, charged: true });
-
-  storage.clear();
-  assert.deepEqual(persistence.loadState().fortuneMeter, { value: 0, charged: false });
-  storage.set(constants.legacyStorageKeys[0], JSON.stringify({ coins: 500, lineBetIndex: 1, sound: true, lastWin: 0 }));
-  assert.deepEqual(persistence.loadState().fortuneMeter, { value: 0, charged: false });
-}
-
-function testFortuneGainRules() {
-  const loss = findStops(result => result.preModifierWin === 0 && result.combinationWins.length === 0);
-  assert.deepEqual(loss.result.fortuneMeterAward, { paidSpinPoints: 2, tierPoints: 0, combinationPoints: 0, jackpotCharge: false, totalPoints: 2 });
-
-  const small = findStops(result => result.naturalWinTier === "small" && result.combinationWins.length === 0);
-  assert.equal(small.result.fortuneMeterAward.totalPoints, 3);
-  const nice = findStops(result => result.naturalWinTier === "nice" && result.combinationWins.length === 0);
-  assert.equal(nice.result.fortuneMeterAward.totalPoints, 5);
-  const big = findStops(result => result.naturalWinTier === "big" && result.combinationWins.length === 0);
-  assert.equal(big.result.fortuneMeterAward.totalPoints, 10);
-
-  const standardCombo = findStops(result => result.combinationWins[0] && result.combinationWins[0].id !== "full-commune");
-  assert.equal(standardCombo.result.fortuneMeterAward.combinationPoints, 3);
-  assert.equal(standardCombo.result.fortuneMeterAward.totalPoints,
-    standardCombo.result.fortuneMeterAward.paidSpinPoints + standardCombo.result.fortuneMeterAward.tierPoints + 3);
-
-  const full = resultFor([4,14,10], { roll: 1 });
-  assert.equal(full.combinationWins[0].id, "full-commune");
-  assert.equal(full.fortuneMeterAward.combinationPoints, 10);
-  assert.equal(full.fortuneMeterAward.totalPoints, 15);
-
-  const jackpot = payouts.createFortuneMeterAward({ naturalWinTier: "jackpot", combinationWins: [], enabled: true });
-  assert.equal(jackpot.jackpotCharge, true);
-  const jackpotState = state({ fortuneMeter: { value: 1, charged: false } });
-  payouts.applyFortuneMeterAward(jackpotState, jackpot);
-  assert.deepEqual(jackpotState.fortuneMeter, { value: 100, charged: true });
-}
-
-function testFortuneMeterCapAndPersistence() {
-  const meterState = state({ fortuneMeter: { value: 99, charged: false } });
-  payouts.applyFortuneMeterAward(meterState, { totalPoints: 15, jackpotCharge: false });
-  assert.deepEqual(meterState.fortuneMeter, { value: 100, charged: true });
-  assert.equal(meterState.fortuneMeter.value, 100);
-
-  storage.clear();
-  persistence.saveState({ ...persistence.defaultState(), fortuneMeter: { value: 100, charged: true } });
-  assert.deepEqual(persistence.loadState().fortuneMeter, { value: 100, charged: true });
-}
-
-function testFortuneSpinConsumptionAndMultiplier() {
-  const loss = findStops(result => result.preModifierWin === 0, flags(true, true, false));
-  const chargedState = state({ coins: 1000, lastWin: 0, fortuneMeter: { value: 100, charged: true } });
-  const losingFortune = payouts.createSpinResult({
-    targetStops: loss.targetStops,
-    state: chargedState,
-    id: "losing-fortune",
-    createdAt: "test",
-    featureFlags: flags(true, true, true),
-    featureRolls: { expandingWild: { roll: loss.roll } },
-  });
-  assert.equal(losingFortune.fortuneSpin.active, true);
-  assert.equal(losingFortune.totalWin, 0);
-  assert.equal(payouts.consumeFortuneChargeState(chargedState, losingFortune), true);
-  assert.deepEqual(chargedState.fortuneMeter, { value: 0, charged: false });
-  chargedState.pendingSpin = losingFortune;
-  payouts.settlePendingSpinState(chargedState);
-  assert.deepEqual(chargedState.fortuneMeter, { value: 2, charged: false });
-
-  const odd = findStops(result => result.preModifierWin > 0 && result.preModifierWin % 2 === 1, flags(true, true, false));
-  const active = resultFor(odd.targetStops, { roll: odd.roll, meter: { value: 100, charged: true }, id: "active" });
-  assert.equal(active.totalWin, Math.floor(active.preModifierWin * 1.5));
-  assert.equal(active.fortuneBonus, active.totalWin - active.preModifierWin);
-  assert.equal(active.modifiers.length, 1);
-  assert.deepEqual(active.modifiers[0], {
-    id: "fortune-spin",
-    name: "Fortune Spin",
-    multiplier: 1.5,
-    baseWin: active.preModifierWin,
-    bonusWin: active.fortuneBonus,
-    finalWin: active.totalWin,
-  });
-}
-
-function testFinalTierAndNaturalMeterTierSeparation() {
-  const elevated = findStops(result => {
-    const active = resultFor(result.targetStops, { roll: result.featureRolls.expandingWild.roll, meter: { value: 100, charged: true } });
-    return active.naturalWinTier !== active.winTier;
-  }, flags(true, true, false));
-  const active = resultFor(elevated.targetStops, { roll: elevated.roll, meter: { value: 100, charged: true } });
-  assert.notEqual(active.naturalWinTier, active.winTier);
-  assert.equal(active.finalWinTier, active.winTier);
-  assert.equal(active.fortuneMeterAward.tierPoints, payouts.getTierFortunePoints(active.naturalWinTier));
-  assert.notEqual(active.fortuneMeterAward.tierPoints, payouts.getTierFortunePoints(active.winTier));
-}
-
-function testFortuneSettlementExactlyOnceAndReloadSafety() {
-  const found = findStops(result => result.preModifierWin > 0);
-  const originalState = state({ coins: 500, lastWin: 0, fortuneMeter: { value: 100, charged: true } });
-  const result = resultFor(found.targetStops, { roll: found.roll, meter: originalState.fortuneMeter, id: "reload-fortune" });
-  payouts.consumeFortuneChargeState(originalState, result);
-  originalState.coins -= result.wager;
-  originalState.pendingSpin = result;
-
-  const serialized = JSON.parse(JSON.stringify(originalState));
-  serialized.pendingSpin = persistence.normalizePendingSpin(serialized.pendingSpin);
-  const beforeSettlement = serialized.coins;
-  const settled = payouts.settlePendingSpinState(serialized);
-  assert.equal(serialized.coins, beforeSettlement + result.totalWin);
-  assert.equal(serialized.fortuneMeter.value, result.fortuneMeterAward.totalPoints);
-  assert.equal(settled.modifiers.filter(modifier => modifier.id === "fortune-spin").length, 1);
-  assert.equal(payouts.settlePendingSpinState(serialized), null);
-  assert.equal(serialized.coins, beforeSettlement + result.totalWin);
-  assert.equal(serialized.fortuneMeter.value, result.fortuneMeterAward.totalPoints);
-}
-
-function testFortuneDisabledPreservesBehavior() {
-  const targetStops = [7,4,5];
-  const disabled = resultFor(targetStops, { roll: 0, meter: { value: 100, charged: true }, featureFlags: flags(true, true, false) });
-  const baseline = resultFor(targetStops, { roll: 0, meter: { value: 0, charged: false }, featureFlags: flags(true, true, false) });
-  assert.equal(disabled.totalWin, baseline.totalWin);
-  assert.equal(disabled.preModifierWin, baseline.preModifierWin);
-  assert.equal(disabled.fortuneSpin.active, false);
-  assert.equal(disabled.modifiers.length, 0);
-  assert.equal(disabled.fortuneMeterAward.totalPoints, 0);
-}
-
-function testPersistencePreservesAuthoritativeFeatureData() {
-  const result = resultFor([4,14,10], { roll: 0, meter: { value: 100, charged: true }, id: "persisted-feature" });
-  const normalized = persistence.normalizePendingSpin(JSON.parse(JSON.stringify(result)));
-  assert.deepEqual(normalized.featureRolls, result.featureRolls);
-  assert.deepEqual(normalized.originalMatrix, result.originalMatrix);
-  assert.deepEqual(normalized.resolvedMatrix, result.resolvedMatrix);
-  assert.deepEqual(normalized.transformations, result.transformations);
-  assert.deepEqual(normalized.combinationWins, result.combinationWins);
-  assert.deepEqual(normalized.fortuneSpin, result.fortuneSpin);
-  assert.deepEqual(normalized.fortuneMeterAward, result.fortuneMeterAward);
-  assert.equal(normalized.settlementStatus, "pending");
-  assert.equal(persistence.normalizePendingSpin({ ...result, settlementStatus: "settled" }), null);
-}
-
-const tests = [
-  testTreeEligibilityAndRolls,
-  testTreeTransformationAndPaylines,
-  testStoredRollReproductionAndReloadSafety,
-  testNamedCombinations,
-  testFullCommuneRequirementsAndPriority,
-  testPayoutScalingAndStacking,
-  testResultTotalsTierCountUpAndSettlement,
-  testFeatureFlagConfigurations,
-  testFortuneStateNormalizationAndMigration,
-  testFortuneGainRules,
-  testFortuneMeterCapAndPersistence,
-  testFortuneSpinConsumptionAndMultiplier,
-  testFinalTierAndNaturalMeterTierSeparation,
-  testFortuneSettlementExactlyOnceAndReloadSafety,
-  testFortuneDisabledPreservesBehavior,
-  testPersistencePreservesAuthoritativeFeatureData,
-];
-
-tests.forEach(test => test());
+const tests=[manifest,reactionSelection,mvp,triggerRules,lockedMath,exactlyOnce,capAndContributions,persistenceRecovery,statisticsAndFlags,regressions];tests.forEach(t=>t());
 console.log(`Feature tests: PASS (${tests.length} groups)`);
