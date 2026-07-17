@@ -1,18 +1,155 @@
 # Commune Fortune
 
-A private-play 3x3 slot machine using fake coins only.
+A private-play 3 x 3 slot machine using fake coins only. The game is a static HTML, CSS, and JavaScript site with no framework, backend, database, bundler, runtime dependency, account, purchase, or cash-out system.
 
 ## Run it
 
-Open `index.html` in a modern browser. No build, account, database, framework, or internet connection is required.
-
-For the most reliable local testing, run a small static server from the project folder:
+Open `index.html` in a modern browser. A small local static server is recommended:
 
 ```bash
 python -m http.server 8080
 ```
 
 Then visit `http://localhost:8080`.
+
+## Current mathematical features
+
+### Tree of Life Awakening Wild
+
+The Tree of Life remains the normal substituting Wild everywhere on the grid. It is eligible to awaken only when it naturally lands in the exact center cell, reel 2 and row 2 in player-facing terms, or `[1][1]` in zero-based matrix coordinates.
+
+An eligible Tree receives one predetermined four-outcome roll while the authoritative spin result is created, before any reel animation begins. Roll `0` activates the feature. Rolls `1`, `2`, and `3` leave the Tree as an ordinary Wild. The activation rule and outcome count are configured in `CONFIG.expandingWild`.
+
+When activated, all three visible cells on the middle reel resolve as Tree Wilds. The result stores both matrices:
+
+- `originalMatrix`: the naturally landed symbols, never mutated
+- `resolvedMatrix`: the matrix used for normal payline evaluation after transformation
+
+The stored feature roll, transformation, matrices, wins, tier, and anticipation are authoritative. Reload recovery never rerolls the feature.
+
+### Commune combinations
+
+The middle horizontal row is the Commune Line. A named trio triggers only in its exact left-to-right order. Combination detection always uses `originalMatrix`, so an expanded Tree cannot manufacture a combination.
+
+| Combination | Exact sequence | Award |
+| --- | --- | ---: |
+| KPs | Sterling, Cydney, Tree | 8 x line bet |
+| Walls | Ryan, Gabi, Tree | 8 x line bet |
+| Jaaps | Kenly, Cooper, Tree | 8 x line bet |
+| Brotherhood | Cooper, Sterling, Ryan | 12 x line bet |
+| Wives’ Circle | Kenly, Gabi, Cydney | 5 x line bet |
+| Household | Ashley, Sterling, Cydney | 8 x line bet |
+| Full Commune | All seven members anywhere, plus Tree in the exact center | 5 x total bet |
+
+Full Commune has priority over every named trio. It awards only Full Commune, while ordinary paylines and Tree Awakening may still stack. All combination awards are added to normal line payouts before the final win tier and anticipation level are classified.
+
+## Outcome and settlement pipeline
+
+Each spin follows one authoritative pipeline:
+
+1. Generate target reel stops.
+2. Build `originalMatrix`.
+3. Generate feature rolls from the injected RNG source.
+4. Detect combinations from `originalMatrix`.
+5. Determine Tree Awakening activation.
+6. Build `resolvedMatrix`.
+7. Apply the middle-reel Wild transformation.
+8. Evaluate normal paylines from `resolvedMatrix`.
+9. Calculate combination awards.
+10. Calculate `totalWin`.
+11. Classify the final win tier.
+12. Classify anticipation from the final result.
+13. Save the pending result.
+14. Animate the predetermined stops.
+15. Present the transformation and combination callouts.
+16. Settle exactly once.
+17. Present the existing final win tier.
+
+A refresh during reel motion, Tree Awakening, combination presentation, or the final celebration cannot change the result or duplicate the payout. If presentation is interrupted, recovery credits the stored `totalWin` once and returns the game to `IDLE`.
+
+## Presentation behavior
+
+Tree Awakening uses the existing Tree artwork, CSS light and branch-like motion, a full-middle-reel overlay, border illumination, and synthesized audio. The transformed reel remains visibly Wild during payline highlighting and the final celebration.
+
+Combination callouts are intentionally shorter than a Nice Win. Standard trios highlight the Commune Line, connect the three cells, name the combination, and show the separate bonus award. Full Commune highlights the seven members and center Tree with all seven accent colors. Both then feed into the existing combined payout and win-tier presentation.
+
+Spin, Enter, or Space skips the remaining presentation without starting another spin. Reduced-motion mode replaces vertical Wild growth with a short crossfade, removes repeated pulses and cabinet shake, and retains a clear border flash and sound when sound is enabled.
+
+## Exact production math
+
+The production simulator imports the same `config.js` and `payouts.js` used by the game. Exact feature calculation enumerates:
+
+```text
+13,824 reel-stop combinations x 4 Wild-roll states = 55,296 weighted outcomes
+```
+
+| Configuration | Base line RTP | Wild increment | Combination RTP | Total RTP |
+| --- | ---: | ---: | ---: | ---: |
+| Base only | 82.0023% | 0.0000% | 0.0000% | 82.0023% |
+| Base + expanding Wild | 82.0023% | 2.6215% | 0.0000% | 84.6238% |
+| Base + combinations | 82.0023% | 0.0000% | 2.1759% | 84.1782% |
+| Base + both | 82.0023% | 2.6215% | 2.1759% | 86.7998% |
+
+With both features enabled:
+
+- House edge: **13.2002%**
+- Any-return frequency: **30.3078%**
+- Net-profitable frequency: **29.8665%**
+- Tree eligibility frequency: **8.3333%**
+- Tree activation frequency: **2.0833%**
+- Maximum payout at line bet 1: **101 coins**, or **20.20 x total bet**
+- Maximum stops and roll: `[7, 4, 5]`, roll `0`
+
+Exact combination frequencies and RTP contributions:
+
+| Combination | Trigger frequency | RTP contribution |
+| --- | ---: | ---: |
+| KPs | 0.1157% | 0.1852% |
+| Walls | 0.1157% | 0.1852% |
+| Jaaps | 0.1736% | 0.2778% |
+| Brotherhood | 0.0868% | 0.2083% |
+| Wives’ Circle | 0.4630% | 0.4630% |
+| Household | 0.1736% | 0.2778% |
+| Full Commune | 0.1157% | 0.5787% |
+
+See `docs/math-model.md` for the full calculation and distributions.
+
+## Validation commands
+
+```bash
+npm test
+node tools/simulate.mjs --check
+npm run simulate
+npm run simulate:monte-carlo
+```
+
+The exact check fails if the disabled-feature base RTP changes from 82.0023%, if either feature contribution leaves its accepted range, or if the combined feature-pass RTP leaves 86.0% to 87.5%.
+
+## Development-only deterministic forcing
+
+On `file:`, `localhost`, or `127.0.0.1`, a single next spin can be forced with query parameters:
+
+```text
+?debugStops=4,14,10&debugRoll=0
+```
+
+The helper is unavailable on the production hostname and is consumed after one spin. Useful cases at line bet 1:
+
+| Scenario | Query values |
+| --- | --- |
+| Ordinary loss | `debugStops=0,0,0&debugRoll=1` |
+| Ordinary line win | `debugStops=0,1,3&debugRoll=1` |
+| Center Tree, no awakening | `debugStops=0,4,0&debugRoll=1` |
+| Center Tree awakens and creates a line | `debugStops=0,4,1&debugRoll=0` |
+| KPs | `debugStops=5,1,4&debugRoll=1` |
+| Walls | `debugStops=11,5,4&debugRoll=1` |
+| Jaaps | `debugStops=1,3,4&debugRoll=1` |
+| Brotherhood | `debugStops=3,6,9&debugRoll=1` |
+| Wives’ Circle | `debugStops=1,5,0&debugRoll=1` |
+| Household | `debugStops=2,6,0&debugRoll=1` |
+| Full Commune without awakening | `debugStops=4,14,10&debugRoll=1` |
+| Full Commune plus awakening | `debugStops=4,14,10&debugRoll=0` |
+| Maximum payout | `debugStops=7,4,5&debugRoll=0` |
 
 ## Project structure
 
@@ -21,6 +158,7 @@ Then visit `http://localhost:8080`.
 ├── index.html
 ├── styles.css
 ├── presentation.css
+├── feature-presentation.css
 ├── package.json
 ├── js/
 │   ├── config.js
@@ -36,182 +174,15 @@ Then visit `http://localhost:8080`.
 │   └── statistics.js
 ├── tools/
 │   ├── simulate.mjs
-│   └── presentation-tests.mjs
+│   ├── presentation-tests.mjs
+│   └── feature-tests.mjs
 ├── docs/
 │   └── math-model.md
-├── assets/
-│   ├── symbols/
-│   ├── portraits/
-│   ├── effects/
-│   ├── audio/
-│   └── backgrounds/
-└── README.md
+└── assets/
 ```
 
-The JavaScript uses ordered classic scripts and a single `globalThis.CommuneFortune` namespace. This keeps the game compatible with direct local opening while allowing the production math modules to be imported by Node validation tools.
+The JavaScript uses ordered classic scripts and one `globalThis.CommuneFortune` namespace. This preserves direct static hosting and lets Node import the production math modules without a build process.
 
-### Module responsibilities
+## Known limitations
 
-- `config.js`: reel maps, symbols, payouts, feature flags, RTP targets, win-tier thresholds, and presentation timings
-- `game-engine.js`: game phase, authoritative spin-result creation, reload-safe settlement, and spin orchestration
-- `game-flow.js`: pure state-aware input routing and celebration timing helpers
-- `reels.js`: reel construction, buffered strip positioning, staged movement, and predetermined reel stops
-- `payouts.js`: pure matrix generation, line evaluation, tier classification, anticipation classification, and spin-result calculation
-- `ui.js`: DOM references, display updates, help modal, win highlighting, and celebration text
-- `effects.js`: cabinet effects, particles, flashes, anticipation state, and cancellable count-ups
-- `audio.js`: synthesized spin, stop, anticipation, and win-tier sounds
-- `bonuses.js`: extension hooks for free spins, modifiers, and bonus rounds
-- `persistence.js`: versioned browser-local state and pending-spin recovery
-- `statistics.js`: session-statistics tracking and future analytics hooks
-- `tools/simulate.mjs`: exact enumeration and seeded Monte Carlo validation
-- `tools/presentation-tests.mjs`: deterministic tier, anticipation, feature-flag, count-up, and skip-routing tests
-
-## Included features
-
-- 3 reels x 3 visible rows
-- 5 always-active paylines
-- Line bets of 1, 2, 5, or 10 coins
-- 1,000 fake starting coins
-- Weighted outcomes defined by the 24-stop reel maps
-- Tree of Life Wild substitution
-- Multiple simultaneous line wins
-- Authoritative outcomes generated before animation
-- Three-stage reel movement: acceleration, sustained speed, and controlled deceleration
-- Staggered reel stops with localized overshoot, flash, synthesized impact, and restrained cabinet response
-- Result-derived mild and strong third-reel anticipation
-- Win-tier presentation based on total-bet multiples
-- Browser-local saved balance and settings
-- Reload-safe, exactly-once settlement of interrupted spins
-- Responsive desktop and mobile layout
-- Reduced-motion support
-- No runtime dependencies or external services
-
-## Win tiers
-
-Win tiers use the final payout divided by the total bet. They do not change reel stops, paylines, payouts, hit frequency, wager math, or RTP.
-
-| Tier | Stable ID | Threshold |
-| --- | --- | ---: |
-| No Win | `none` | `0` |
-| Small Win | `small` | Greater than `0`, less than `5x` total bet |
-| Nice Win | `nice` | `5x` to less than `15x` total bet |
-| Big Win | `big` | `15x` to less than `40x` total bet |
-| Commune Jackpot | `jackpot` | `40x` total bet or greater |
-
-The current base machine cannot normally reach the Commune Jackpot threshold. Its full-stage Tree of Life presentation is implemented for future mathematical features without altering the current game.
-
-Nice, Big, and Commune Jackpot celebrations can be skipped by pressing the main **Spin/Skip** control, **Enter**, or **Space**. The skip input only ends the current celebration; it cannot also start the next spin. The real balance is settled once before presentation begins, and the count-up is display-only.
-
-## Better Spin Drama
-
-With `CONFIG.features.spinDrama` enabled, each reel uses a staged motion profile and stops against the predetermined target. Anticipation is derived from the authoritative result:
-
-- `none`: ordinary timing
-- `mild`: the first two reel targets create a plausible active-line continuation
-- `strong`: the result is a Nice Win or greater
-
-Anticipation may delay the third reel, dim the stage, intensify the final stop, and add a restrained pulse. It never changes stops or manufactures near misses. Set `CONFIG.features.spinDrama` to `false` to retain normal predetermined spinning without the anticipation layer.
-
-## Reduced motion
-
-The game respects `prefers-reduced-motion: reduce`. Reduced-motion mode shortens reel and celebration timing, minimizes reel bounce, removes cabinet shake and repeated pulses, suppresses confetti, and still communicates stops, tiers, winning lines, and the exact final payout.
-
-## Presentation configuration
-
-Important tuning fields are centralized in `js/config.js`:
-
-- `features.spinDrama` and `features.winTiers`
-- `winTiers.thresholds`
-- `winTiers.celebrationDurations`
-- `winTiers.countUpDurations`
-- `winTiers.countUpMinimum` and `winTiers.countUpMaximum`
-- `anticipation.delays`
-- `reelAnimation.durations`
-- `reelAnimation.cycles`
-- `reelAnimation.finalApproachDuration`
-- `reelAnimation.stopOvershootRatio`
-- `reelAnimation.settleDuration`
-- `reducedMotion.*Scale`
-- `characterAccentColors`
-
-The repeated strip buffer is validated when reels are built so every configured animation path retains additional full copies beyond the visible rows.
-
-## Math and presentation validation
-
-The current three-reel base game has only 13,824 possible stop combinations, so the simulator enumerates every outcome exactly.
-
-```bash
-npm run simulate
-```
-
-Run deterministic presentation tests and the configured base-RTP regression check:
-
-```bash
-npm test
-```
-
-Run the exact RTP check directly:
-
-```bash
-node tools/simulate.mjs --check
-```
-
-Run a seeded million-spin Monte Carlo comparison:
-
-```bash
-npm run simulate:monte-carlo
-```
-
-The current exact base-game RTP is approximately **82.0023%**, within the configured 82% to 83% base target. Better Spin Drama and Win Tiers are presentation-only and do not contribute or remove RTP. The final total RTP target, after wager-generated features, is 96% to 97%. See `docs/math-model.md`.
-
-## Replace the symbol art
-
-The game loads these files:
-
-- `assets/symbols/sterling.svg`
-- `assets/symbols/cydney.svg`
-- `assets/symbols/ryan.svg`
-- `assets/symbols/gabi.svg`
-- `assets/symbols/cooper.svg`
-- `assets/symbols/kenly.svg`
-- `assets/symbols/ashley.svg`
-- `assets/symbols/tree-of-life.svg`
-
-You have two options:
-
-1. Export finished art using the exact same filenames and overwrite the placeholder files.
-2. Export PNGs and update the image paths in `js/config.js`.
-
-Recommended source art is a square 512 x 512 or 1024 x 1024 transparent PNG. The page scales each image automatically and constructs the vertical reel strips from individual symbol files.
-
-## Current reel maps
-
-The exact 24-stop maps are in `CONFIG.reels` inside `js/config.js`. Symbol abbreviations:
-
-- STR: Sterling
-- CYD: Cydney
-- RYN: Ryan
-- GAB: Gabi
-- COP: Cooper
-- KEN: Kenly
-- ASH: Ashley
-- TOL: Tree of Life Wild
-
-## Current payouts
-
-Payouts are per line-bet coin:
-
-- Kenly: 8
-- Gabi: 8
-- Cydney: 11
-- Ashley: 12
-- Cooper: 12
-- Ryan: 18
-- Sterling: 25
-- Tree of Life Wild: 60
-
-Because all five paylines are active, total spin cost is `line bet x 5`. With the included reel maps, the default tuning produces a return on roughly 28.9 percent of spins and an approximately 82.0 percent exact theoretical return.
-
-## Reset saved data
-
-Use the in-game **Refill** button to restore 1,000 coins. Version 2 state is stored under `commune-fortune-v2`; existing `commune-fortune-v1` balances and sound settings migrate automatically when first loaded.
+This feature pass intentionally does not add Scatters, free spins, the Fortune Meter, portrait animation, alternate portraits, manual stopping, mystery modifiers, secret events, or a backend. The current combined RTP is 86.7998%, leaving 9.2002 to 10.2002 percentage points for later wager-generated features while preserving the long-term 96% to 97% target. No exact outcome in the current model reaches the 40 x Commune Jackpot threshold.

@@ -1,43 +1,35 @@
 (() => {
   "use strict";
-
   const app = globalThis.CommuneFortune;
   const { CONFIG, constants, GAME_STATES } = app;
 
   function defaultState() {
-    return {
-      schemaVersion: CONFIG.schemaVersion,
-      coins: CONFIG.startingCoins,
-      lineBetIndex: 0,
-      sound: true,
-      lastWin: 0,
-      gamePhase: GAME_STATES.IDLE,
-      pendingSpin: null,
-    };
+    return { schemaVersion: CONFIG.schemaVersion, coins: CONFIG.startingCoins, lineBetIndex: 0, sound: true, lastWin: 0, gamePhase: GAME_STATES.IDLE, pendingSpin: null };
   }
 
   function readSavedState() {
     const primary = localStorage.getItem(constants.storageKey);
     if (primary) return JSON.parse(primary);
-
     for (const legacyKey of constants.legacyStorageKeys) {
       const legacy = localStorage.getItem(legacyKey);
       if (legacy) return JSON.parse(legacy);
     }
-
     return null;
   }
 
   function normalizePendingSpin(pendingSpin) {
     if (!pendingSpin || typeof pendingSpin !== "object") return null;
-    if (typeof pendingSpin.id !== "string") return null;
-    if (!Array.isArray(pendingSpin.targetStops)) return null;
+    if (typeof pendingSpin.id !== "string" || !Array.isArray(pendingSpin.targetStops)) return null;
+    if (pendingSpin.settlementStatus && pendingSpin.settlementStatus !== "pending") return null;
     if (!Number.isFinite(pendingSpin.wager) || pendingSpin.wager < 0) return null;
     if (!Number.isFinite(pendingSpin.totalWin) || pendingSpin.totalWin < 0) return null;
-
     return {
       ...pendingSpin,
       wager: Math.floor(pendingSpin.wager),
+      lineBet: Number.isFinite(pendingSpin.lineBet) ? Math.floor(pendingSpin.lineBet) : 1,
+      baseLineWinTotal: Number.isFinite(pendingSpin.baseLineWinTotal) ? Math.floor(pendingSpin.baseLineWinTotal) : 0,
+      lineWinTotal: Number.isFinite(pendingSpin.lineWinTotal) ? Math.floor(pendingSpin.lineWinTotal) : Math.floor(pendingSpin.totalWin),
+      combinationWinTotal: Number.isFinite(pendingSpin.combinationWinTotal) ? Math.floor(pendingSpin.combinationWinTotal) : 0,
       totalWin: Math.floor(pendingSpin.totalWin),
       settlementStatus: "pending",
     };
@@ -47,14 +39,11 @@
     try {
       const saved = readSavedState();
       if (!saved) return defaultState();
-
       const pendingSpin = normalizePendingSpin(saved.pendingSpin);
       return {
         schemaVersion: CONFIG.schemaVersion,
         coins: Number.isFinite(saved.coins) ? Math.max(0, Math.floor(saved.coins)) : CONFIG.startingCoins,
-        lineBetIndex: Number.isInteger(saved.lineBetIndex)
-          ? Math.min(Math.max(saved.lineBetIndex, 0), CONFIG.lineBets.length - 1)
-          : 0,
+        lineBetIndex: Number.isInteger(saved.lineBetIndex) ? Math.min(Math.max(saved.lineBetIndex, 0), CONFIG.lineBets.length - 1) : 0,
         sound: saved.sound !== false,
         lastWin: Number.isFinite(saved.lastWin) ? Math.max(0, Math.floor(saved.lastWin)) : 0,
         gamePhase: pendingSpin ? GAME_STATES.RESOLVING : GAME_STATES.IDLE,
@@ -82,5 +71,5 @@
     }
   }
 
-  app.persistence = { defaultState, loadState, saveState };
+  app.persistence = { defaultState, normalizePendingSpin, loadState, saveState };
 })();

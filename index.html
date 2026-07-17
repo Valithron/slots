@@ -7,16 +7,14 @@
   <title>Commune Fortune</title>
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="presentation.css" />
+  <link rel="stylesheet" href="feature-presentation.css" />
 </head>
 <body>
   <main class="app">
     <header class="topbar">
       <div class="brand">
         <div class="brand-mark"><img src="assets/symbols/tree-of-life.svg" alt="Tree of Life" /></div>
-        <div class="brand-copy">
-          <div class="eyebrow">Private Play</div>
-          <h1>Commune Fortune</h1>
-        </div>
+        <div class="brand-copy"><div class="eyebrow">Private Play</div><h1>Commune Fortune</h1></div>
       </div>
       <button class="icon-button" id="helpButton" aria-label="How to play">?</button>
     </header>
@@ -24,27 +22,25 @@
     <section class="machine" id="machine" aria-label="Commune Fortune slot machine">
       <div class="marquee">
         <div class="marquee-title">Commune Fortune</div>
-        <div class="marquee-sub">Five lines · Wild Tree · Fake coins only</div>
+        <div class="marquee-sub">Five lines · Awakening Wild · Commune combinations</div>
       </div>
 
       <div class="status-strip">
-        <div class="meter">
-          <span class="meter-label">Coins</span>
-          <span class="meter-value" id="coinsValue">1,000</span>
-        </div>
-        <div class="meter">
-          <span class="meter-label">Total Bet</span>
-          <span class="meter-value" id="betValue">5</span>
-        </div>
-        <div class="meter">
-          <span class="meter-label">Last Win</span>
-          <span class="meter-value" id="winValue">0</span>
-        </div>
+        <div class="meter"><span class="meter-label">Coins</span><span class="meter-value" id="coinsValue">1,000</span></div>
+        <div class="meter"><span class="meter-label">Total Bet</span><span class="meter-value" id="betValue">5</span></div>
+        <div class="meter"><span class="meter-label">Last Win</span><span class="meter-value" id="winValue">0</span></div>
       </div>
 
       <div class="stage">
         <div class="reel-frame" id="reelFrame">
           <div class="reel-grid" id="reelGrid" aria-label="Three slot reels"></div>
+          <div class="wild-awakening-overlay" id="wildAwakeningOverlay" aria-hidden="true">
+            <div class="wild-awakening-light"></div>
+            <div class="wild-awakening-cell"><img src="assets/symbols/tree-of-life.svg" alt=""></div>
+            <div class="wild-awakening-cell"><img src="assets/symbols/tree-of-life.svg" alt=""></div>
+            <div class="wild-awakening-cell"><img src="assets/symbols/tree-of-life.svg" alt=""></div>
+          </div>
+          <div class="combination-connector" id="combinationConnector" aria-hidden="true"></div>
           <div class="grid-shine"></div>
           <svg class="paylines" id="paylines" viewBox="0 0 300 300" preserveAspectRatio="none" aria-hidden="true">
             <polyline class="payline" data-line="0" points="8,50 150,50 292,50" style="color:#ff526f;stroke:currentColor" />
@@ -53,6 +49,14 @@
             <polyline class="payline" data-line="3" points="8,50 150,150 292,250" style="color:#ffb45d;stroke:currentColor" />
             <polyline class="payline" data-line="4" points="8,250 150,150 292,50" style="color:#d69cff;stroke:currentColor" />
           </svg>
+        </div>
+
+        <div class="combination-layer" id="combinationLayer" aria-hidden="true">
+          <div class="combination-panel" role="group" aria-label="Combination bonus">
+            <div class="combination-kicker">Commune Line</div>
+            <div class="combination-title" id="combinationTitle">KPs</div>
+            <div class="combination-amount" id="combinationAmount">+8 coins</div>
+          </div>
         </div>
 
         <div class="celebration-layer" id="celebrationLayer" aria-hidden="true">
@@ -68,25 +72,20 @@
       </div>
 
       <div class="message" id="message">Choose a bet and spin.</div>
-
       <div class="controls">
         <div class="bet-control">
           <button class="small-button" id="betDown" aria-label="Lower line bet">−</button>
           <div class="bet-readout"><small>Line bet</small><span id="lineBetValue">1</span></div>
           <button class="small-button" id="betUp" aria-label="Raise line bet">+</button>
         </div>
-
         <button class="spin-button" id="spinButton" aria-label="Spin the reels">Spin</button>
-
         <div class="utility-controls">
           <button class="small-button" id="soundButton"><span class="label">Sound </span><span id="soundState">On</span></button>
           <button class="small-button" id="refillButton" title="Restore coins to 1,000">Refill</button>
         </div>
       </div>
-
       <div class="paytable" id="paytable"></div>
     </section>
-
     <div class="footer-note">No real money, purchases, cash-out, or external services. Progress is stored only in this browser.</div>
   </main>
 
@@ -96,11 +95,16 @@
       <p>Every spin activates five lines: the three horizontal rows and both diagonals. The total bet is five times the line bet.</p>
       <ul>
         <li>Three matching portraits on a line pay according to the table.</li>
-        <li>The silver Tree of Life is Wild and substitutes for any portrait.</li>
-        <li>Multiple winning lines are added together.</li>
-        <li>Nice Wins and larger celebrations can be skipped with Spin, Enter, or Space.</li>
-        <li>Your fake coin balance and settings save automatically in this browser.</li>
+        <li>The silver Tree of Life remains Wild and substitutes for any portrait.</li>
+        <li>A Tree that naturally lands in the exact center cell may awaken and fill the middle reel with Wilds.</li>
+        <li>The middle row is the Commune Line. Named trios require the exact left-to-right order shown below.</li>
+        <li>Full Commune requires all seven members in the grid and the Tree in the exact center cell.</li>
+        <li>Combination bonuses add to ordinary line wins before the final win tier is determined.</li>
+        <li>Nice Wins and larger presentations can be skipped with Spin, Enter, or Space.</li>
+        <li>Your fake coin balance, pending result, feature roll, and settings save automatically in this browser.</li>
       </ul>
+      <h3 class="combination-reference-heading">Commune combinations</h3>
+      <div class="combination-reference" id="combinationReference"></div>
       <div class="modal-actions"><button class="small-button" id="closeHelp">Close</button></div>
     </div>
   </div>
