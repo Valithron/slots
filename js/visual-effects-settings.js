@@ -23,28 +23,13 @@
     return "auto";
   }
 
-  function defaultState() {
-    return {
-      ...originalDefaultState(),
-      visualEffectsMode: "auto",
-    };
-  }
+  let currentMode = readStoredMode();
 
-  function loadState() {
-    return {
-      ...originalLoadState(),
-      visualEffectsMode: readStoredMode(),
-    };
-  }
-
-  function saveState(state) {
-    if (!state || typeof state !== "object") return false;
-    const mode = normalizeVisualEffectsMode(state.visualEffectsMode);
-    state.visualEffectsMode = mode;
-    if (!originalSaveState(state)) return false;
+  function writeStoredMode(mode) {
+    currentMode = normalizeVisualEffectsMode(mode);
     try {
       const saved = JSON.parse(localStorage.getItem(constants.storageKey) || "{}");
-      saved.visualEffectsMode = mode;
+      saved.visualEffectsMode = currentMode;
       localStorage.setItem(constants.storageKey, JSON.stringify(saved));
       return true;
     } catch {
@@ -52,10 +37,39 @@
     }
   }
 
+  function defaultState() {
+    return {
+      ...originalDefaultState(),
+      visualEffectsMode: currentMode,
+    };
+  }
+
+  function loadState() {
+    currentMode = readStoredMode();
+    return {
+      ...originalLoadState(),
+      visualEffectsMode: currentMode,
+    };
+  }
+
+  function saveState(state) {
+    if (!state || typeof state !== "object") return false;
+    state.visualEffectsMode = currentMode;
+    if (!originalSaveState(state)) return false;
+    return writeStoredMode(currentMode);
+  }
+
+  function setMode(mode) {
+    writeStoredMode(mode);
+    return currentMode;
+  }
+
   app.visualEffectsSettings = {
     VALID_MODES,
     normalizeVisualEffectsMode,
     readStoredMode,
+    getMode: () => currentMode,
+    setMode,
   };
   app.persistence.defaultState = defaultState;
   app.persistence.loadState = loadState;
