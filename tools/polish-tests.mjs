@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 const store = new Map();
 let systemReduced = false;
@@ -27,6 +28,7 @@ await import("../js/game-flow.js");
 await import("../js/effects.js");
 await import("../js/mobile-effects.js");
 
+const mobileCss = await readFile(new URL("../mobile-effects.css", import.meta.url), "utf8");
 const app = globalThis.CommuneFortune;
 const { CONFIG, payouts, persistence, effects, combinationClarity } = app;
 const state = overrides => ({
@@ -73,10 +75,27 @@ function visualEffectsModes() {
   assert.equal(effects.isMobileTuningActive({ width: 768, coarsePointer: false }), true);
   assert.equal(effects.isMobileTuningActive({ width: 1200, coarsePointer: true }), true);
   assert.equal(effects.isMobileTuningActive({ width: 1200, coarsePointer: false }), false);
+
   const reducedProfile = effects.getTactileProfile({ visualEffectsMode: "reduced" }, { width: 390, coarsePointer: true, systemReduced: false });
   assert.equal(reducedProfile.visibleImpact, true);
   assert.equal(reducedProfile.cabinetMotion, false);
+  assert.equal(reducedProfile.localizedMotion, false);
   assert.equal(reducedProfile.repeatedPulse, false);
+
+  const fullMobileProfile = effects.getTactileProfile({ visualEffectsMode: "full" }, { width: 390, coarsePointer: true, systemReduced: true });
+  assert.equal(fullMobileProfile.mode, "full");
+  assert.equal(fullMobileProfile.visibleImpact, true);
+  assert.equal(fullMobileProfile.cabinetMotion, false);
+  assert.equal(fullMobileProfile.localizedMotion, false);
+}
+
+function mobileCompositingSafety() {
+  assert.match(mobileCss, /\.machine\.tactile-mobile \.reel\.is-stop-impact \{[\s\S]*?animation: none !important;[\s\S]*?transform: none !important;[\s\S]*?filter: none !important;/);
+  assert.match(mobileCss, /\.machine\.tactile-mobile\.reel-impact,[\s\S]*?animation: none !important;[\s\S]*?transform: none !important;/);
+  assert.match(mobileCss, /@keyframes mobileSafeReelFlash/);
+  assert.doesNotMatch(mobileCss, /@keyframes mobileLocalizedReelImpact/);
+  assert.doesNotMatch(mobileCss, /@keyframes mobileFrameImpact/);
+  assert.doesNotMatch(mobileCss, /@keyframes mobileCabinetImpact/);
 }
 
 function namedCombinationPermutations() {
@@ -150,6 +169,6 @@ function payoutScalingAndMath() {
   assert.equal(auto.preModifierWin, auto.lineWinTotal + auto.combinationWinTotal);
 }
 
-const tests = [visualEffectsModes, namedCombinationPermutations, boundaryRules, fullCommuneRules, payoutScalingAndMath];
+const tests = [visualEffectsModes, mobileCompositingSafety, namedCombinationPermutations, boundaryRules, fullCommuneRules, payoutScalingAndMath];
 tests.forEach(test => test());
 console.log(`Polish tests: PASS (${tests.length} groups)`);
