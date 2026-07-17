@@ -1,19 +1,24 @@
 name: Apply slot hotfix
 
 on:
-  push:
-    paths:
-      - ".github/workflows/apply-slot-hotfix.yml"
-  workflow_dispatch:
+  pull_request_target:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - edited
 
 permissions:
   contents: write
 
 jobs:
   patch:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/fix-third-reel-rendering'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
 
       - name: Patch reel strip and help copy
         run: |
@@ -71,7 +76,7 @@ jobs:
           node --check /tmp/slots-script.js
           ! grep -q "To replace the placeholder symbols" index.html
 
-      - name: Commit hotfix
+      - name: Commit hotfix to branch
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
