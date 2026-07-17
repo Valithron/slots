@@ -17,10 +17,10 @@
   const FEATURES = Object.freeze({
     spinDrama: true,
     winTiers: true,
-    characterAnimations: false,
+    characterReactions: true,
     expandingWilds: true,
     scatters: false,
-    freeSpins: false,
+    freeSpins: true,
     fortuneMeter: true,
     dailyRewards: false,
     advancedAudio: false,
@@ -29,6 +29,41 @@
     mysteryModifiers: false,
     combinationBonuses: true,
     secretEvents: false,
+  });
+
+  const characterPresentation = Object.freeze({
+    assetVersion: "portraits-v2",
+    genericAsset: "assets/symbols/tree-of-life.svg",
+    characters: Object.freeze({
+      STR: Object.freeze({ name: "Sterling", base: "assets/symbols/sterling.svg", nice: null, big: null, accent: "#d3d8e8" }),
+      CYD: Object.freeze({ name: "Cydney", base: "assets/symbols/cydney.svg", nice: null, big: null, accent: "#86a66a" }),
+      RYN: Object.freeze({ name: "Ryan", base: "assets/symbols/ryan.svg", nice: null, big: null, accent: "#a276ff" }),
+      GAB: Object.freeze({ name: "Gabi", base: "assets/symbols/gabi.svg", nice: null, big: null, accent: "#89d2ff" }),
+      COP: Object.freeze({ name: "Cooper", base: "assets/symbols/cooper.svg", nice: null, big: null, accent: "#e0aa3e" }),
+      KEN: Object.freeze({ name: "Kenly", base: "assets/symbols/kenly.svg", nice: null, big: null, accent: "#65e6cc" }),
+      ASH: Object.freeze({ name: "Ashley", base: "assets/symbols/ashley.svg", nice: null, big: null, accent: "#ff7fba" }),
+      TOL: Object.freeze({ name: "Tree of Life", base: "assets/symbols/tree-of-life.svg", nice: null, big: null, accent: "#f1d98a" }),
+    }),
+    allMembers: Object.freeze(["STR", "CYD", "RYN", "GAB", "COP", "KEN", "ASH"]),
+    combinationMembers: Object.freeze({
+      kps: Object.freeze(["STR", "CYD"]),
+      walls: Object.freeze(["RYN", "GAB"]),
+      jaaps: Object.freeze(["KEN", "COP"]),
+      brotherhood: Object.freeze(["COP", "STR", "RYN"]),
+      "wives-circle": Object.freeze(["KEN", "GAB", "CYD"]),
+      household: Object.freeze(["ASH", "STR", "CYD"]),
+      "full-commune": Object.freeze(["STR", "CYD", "RYN", "GAB", "COP", "KEN", "ASH"]),
+    }),
+    durations: Object.freeze({
+      nice: 1550,
+      big: 2300,
+      jackpot: 3600,
+      compactNice: 680,
+      compactBig: 980,
+      retrigger: 720,
+      summary: 0,
+      reducedCompact: 240,
+    }),
   });
 
   const combinationDefinitions = Object.freeze([
@@ -49,7 +84,7 @@
   });
 
   app.CONFIG = {
-    schemaVersion: 4,
+    schemaVersion: 5,
     startingCoins: 1000,
     rowCount: 3,
     rtpTargets: {
@@ -59,9 +94,20 @@
       featurePassTotal: { minimum: 0.86, maximum: 0.875 },
       fortuneIncrement: { minimum: 0.008, maximum: 0.012 },
       fortuneTotal: { minimum: 0.876, maximum: 0.88 },
+      freeSpinIncrement: { minimum: 0.054, maximum: 0.059 },
+      withFreeSpinsTotal: { minimum: 0.932, maximum: 0.938 },
       total: { minimum: 0.96, maximum: 0.97 },
     },
     features: FEATURES,
+    characterPresentation,
+    freeSpins: {
+      triggerSymbolKey: "TOL",
+      startingAward: 4,
+      retriggerAward: 2,
+      maximumAwardedSpins: 20,
+      autoAdvanceDelay: 650,
+      reducedMotionDelay: 320,
+    },
     expandingWild: {
       symbolKey: "TOL",
       reelIndex: 1,
@@ -148,5 +194,8 @@
   };
 
   app.GAME_STATES = GAME_STATES;
-  app.constants = { storageKey: "commune-fortune-v4", legacyStorageKeys: ["commune-fortune-v3", "commune-fortune-v2", "commune-fortune-v1"] };
+  app.constants = {
+    storageKey: "commune-fortune-v5",
+    legacyStorageKeys: ["commune-fortune-v4", "commune-fortune-v3", "commune-fortune-v2", "commune-fortune-v1"],
+  };
 })();
