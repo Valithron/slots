@@ -50,9 +50,9 @@ function permutations(values) {
 
 function matrixWithMiddle(row) {
   return [
-    ["GAB", "ASH", "KEN"],
+    ["ASH", "ASH", "ASH"],
     [...row],
-    ["RYN", "COP", "GAB"],
+    ["GAB", "GAB", "GAB"],
   ];
 }
 
