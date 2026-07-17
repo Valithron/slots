@@ -38,9 +38,21 @@
       combinationAmount: document.getElementById("combinationAmount"),
       combinationReference: document.getElementById("combinationReference"),
       combinationConnector: document.getElementById("combinationConnector"),
+      fortuneMeterWrap: document.getElementById("fortuneMeterWrap"),
+      fortuneProgress: document.getElementById("fortuneProgress"),
+      fortuneFill: document.getElementById("fortuneFill"),
+      fortuneStatus: document.getElementById("fortuneStatus"),
+      fortuneGain: document.getElementById("fortuneGain"),
+      fortuneSpinBadge: document.getElementById("fortuneSpinBadge"),
+      fortuneResultLayer: document.getElementById("fortuneResultLayer"),
+      fortuneNaturalWin: document.getElementById("fortuneNaturalWin"),
+      fortuneBonusWin: document.getElementById("fortuneBonusWin"),
+      fortuneTotalWin: document.getElementById("fortuneTotalWin"),
+      fortuneAnnouncer: document.getElementById("fortuneAnnouncer"),
     };
 
     const formatNumber = value => Math.floor(value).toLocaleString();
+    let fortuneGainTimer = null;
 
     function buildPaytable() {
       elements.paytable.innerHTML = CONFIG.paytableOrder.map(key => {
@@ -60,7 +72,92 @@
       elements.combinationReference.innerHTML = entries.join("");
     }
 
-    function updateDisplay({ state, phase, lineBet, totalBet }) {
+    function updateFortuneMeter({ meter, active = false, announce = false } = {}) {
+      if (!elements.fortuneMeterWrap) return;
+      const enabled = Boolean(CONFIG.features.fortuneMeter);
+      elements.fortuneMeterWrap.hidden = !enabled;
+      if (!enabled) return;
+      const normalized = app.payouts.normalizeFortuneMeter(meter);
+      const capacity = CONFIG.fortuneMeter.capacity;
+      const displayedValue = active ? 0 : normalized.value;
+      const percentage = Math.min(100, Math.max(0, displayedValue / capacity * 100));
+      elements.fortuneFill.style.width = `${percentage}%`;
+      elements.fortuneProgress.setAttribute("aria-valuemin", "0");
+      elements.fortuneProgress.setAttribute("aria-valuemax", String(capacity));
+      elements.fortuneProgress.setAttribute("aria-valuenow", String(displayedValue));
+      elements.fortuneProgress.setAttribute("aria-label", active
+        ? "Fortune Spin active. Fortune Meter reset to 0 of 100."
+        : normalized.charged
+          ? "Fortune Meter charged. The next paid spin is a Fortune Spin."
+          : `Fortune Meter, ${displayedValue} of ${capacity}`);
+      elements.fortuneStatus.textContent = active ? "Fortune Spin" : normalized.charged ? "Fortune Ready" : `${displayedValue} / ${capacity}`;
+      elements.fortuneMeterWrap.classList.toggle("is-charged", normalized.charged && !active);
+      elements.fortuneMeterWrap.classList.toggle("is-active", active);
+      if (announce && elements.fortuneAnnouncer) {
+        elements.fortuneAnnouncer.textContent = normalized.charged
+          ? "Fortune Meter charged. The next paid spin is a Fortune Spin."
+          : `Fortune total ${displayedValue} of ${capacity}.`;
+      }
+    }
+
+    function animateFortuneGain({ from = 0, to = 0, award = null, charged = false } = {}) {
+      if (!CONFIG.features.fortuneMeter || !elements.fortuneMeterWrap) return;
+      const capacity = CONFIG.fortuneMeter.capacity;
+      const safeFrom = Math.min(capacity, Math.max(0, Math.floor(from)));
+      const safeTo = Math.min(capacity, Math.max(0, Math.floor(to)));
+      const points = Math.max(0, Math.floor(award?.totalPoints || 0));
+      elements.fortuneFill.style.width = `${safeFrom / capacity * 100}%`;
+      elements.fortuneFill.getBoundingClientRect();
+      requestAnimationFrame(() => { elements.fortuneFill.style.width = `${safeTo / capacity * 100}%`; });
+      elements.fortuneProgress.setAttribute("aria-valuenow", String(safeTo));
+      elements.fortuneProgress.setAttribute("aria-label", charged
+        ? "Fortune Meter charged. The next paid spin is a Fortune Spin."
+        : `Fortune Meter, ${safeTo} of ${capacity}`);
+      elements.fortuneStatus.textContent = charged ? "Fortune Ready" : `${safeTo} / ${capacity}`;
+      elements.fortuneMeterWrap.classList.toggle("is-charged", charged);
+      if (points > 0 && elements.fortuneGain) {
+        window.clearTimeout(fortuneGainTimer);
+        elements.fortuneGain.textContent = `+${points} Fortune`;
+        elements.fortuneGain.classList.remove("is-visible");
+        void elements.fortuneGain.offsetWidth;
+        elements.fortuneGain.classList.add("is-visible");
+        fortuneGainTimer = window.setTimeout(() => elements.fortuneGain.classList.remove("is-visible"), 1250);
+      }
+      if (elements.fortuneAnnouncer) {
+        elements.fortuneAnnouncer.textContent = charged
+          ? "Fortune Meter charged. The next paid spin is a Fortune Spin."
+          : `Fortune increased by ${points}. Total ${safeTo} of ${capacity}.`;
+      }
+    }
+
+    function setFortuneSpinActive(active) {
+      elements.machine?.classList.toggle("is-fortune-spin", active);
+      elements.reelFrame?.classList.toggle("fortune-spin-active", active);
+      elements.spinButton?.classList.toggle("fortune-ready", !active && CONFIG.features.fortuneMeter && elements.fortuneMeterWrap?.classList.contains("is-charged"));
+      if (elements.fortuneSpinBadge) {
+        elements.fortuneSpinBadge.classList.toggle("is-visible", active);
+        elements.fortuneSpinBadge.setAttribute("aria-hidden", active ? "false" : "true");
+      }
+    }
+
+    function showFortuneResult(result) {
+      if (!elements.fortuneResultLayer || !result?.fortuneSpin?.active || result.totalWin <= 0) return false;
+      elements.fortuneNaturalWin.textContent = formatNumber(result.preModifierWin);
+      elements.fortuneBonusWin.textContent = `+${formatNumber(result.fortuneBonus)}`;
+      elements.fortuneTotalWin.textContent = formatNumber(result.totalWin);
+      elements.fortuneResultLayer.classList.add("is-visible");
+      elements.fortuneResultLayer.setAttribute("aria-hidden", "false");
+      if (elements.fortuneAnnouncer) elements.fortuneAnnouncer.textContent = `Fortune Spin. Natural win ${formatNumber(result.preModifierWin)}. Fortune bonus ${formatNumber(result.fortuneBonus)}. Total win ${formatNumber(result.totalWin)} coins.`;
+      return true;
+    }
+
+    function hideFortuneResult() {
+      if (!elements.fortuneResultLayer) return;
+      elements.fortuneResultLayer.classList.remove("is-visible");
+      elements.fortuneResultLayer.setAttribute("aria-hidden", "true");
+    }
+
+    function updateDisplay({ state, phase, lineBet, totalBet, manualStopState = null, fortuneSpinActive = false }) {
       const busy = phase !== GAME_STATES.IDLE;
       const celebrating = phase === GAME_STATES.CELEBRATING;
       elements.coinsValue.textContent = formatNumber(state.coins);
@@ -71,8 +168,13 @@
       elements.betDown.disabled = busy || state.lineBetIndex === 0;
       elements.betUp.disabled = busy || state.lineBetIndex === CONFIG.lineBets.length - 1;
       elements.refillButton.disabled = busy;
-      elements.spinButton.disabled = busy && !celebrating;
-      setPrimaryAction(celebrating ? "skip" : "spin");
+      const nextStopIndex = manualStopState?.nextStopIndex ?? null;
+      const mode = app.gameFlow.getPrimaryActionMode({ phase, manualStopsEnabled: CONFIG.features.manualStops, nextStopIndex });
+      elements.spinButton.disabled = mode === "disabled" || mode === "stop-disabled" || (busy && !celebrating && mode !== "stop");
+      setPrimaryAction(mode, { reelIndex: nextStopIndex });
+      updateFortuneMeter({ meter: state.fortuneMeter, active: fortuneSpinActive });
+      setFortuneSpinActive(fortuneSpinActive);
+      elements.spinButton.classList.toggle("fortune-ready", phase === GAME_STATES.IDLE && Boolean(state.fortuneMeter?.charged));
     }
 
     function setControlsDisabled(disabled, state, { allowSpin = false } = {}) {
@@ -82,11 +184,19 @@
       elements.refillButton.disabled = disabled;
     }
 
-    function setPrimaryAction(mode) {
+    function setPrimaryAction(mode, { reelIndex = null } = {}) {
       const skipping = mode === "skip";
-      elements.spinButton.textContent = skipping ? "Skip" : "Spin";
-      elements.spinButton.setAttribute("aria-label", skipping ? "Skip remaining win presentation" : "Spin the reels");
+      const stopping = mode === "stop" || mode === "stop-disabled";
+      elements.spinButton.textContent = skipping ? "Skip" : stopping ? "Stop" : "Spin";
+      const label = skipping
+        ? "Skip remaining win presentation"
+        : stopping
+          ? app.gameFlow.getStopAriaLabel(reelIndex)
+          : "Spin the reels";
+      elements.spinButton.setAttribute("aria-label", label);
       elements.spinButton.classList.toggle("is-skip", skipping);
+      elements.spinButton.classList.toggle("is-stop", stopping);
+      if (mode === "stop-disabled" || mode === "disabled") elements.spinButton.disabled = true;
     }
 
     const setWinDisplay = value => { elements.winValue.textContent = formatNumber(value); };
@@ -142,9 +252,7 @@
         .forEach(({ cell }) => cell.classList.add("is-awakening-source"));
     }
 
-    function clearAwakeningMark() {
-      clearCellClasses(["is-awakening-source"]);
-    }
+    function clearAwakeningMark() { clearCellClasses(["is-awakening-source"]); }
 
     function markCombination(combinationWin, result, reelController) {
       clearCellClasses(["is-combination"]);
@@ -182,6 +290,7 @@
       clearCellClasses(["is-awakening-source", "is-combination"]);
       clearCombinationMarks();
       hideCombinationCallout();
+      hideFortuneResult();
       elements.machine.classList.remove("is-tree-awakening", "is-combination-win", "is-full-commune");
       elements.reelFrame.classList.remove("tree-awakening-active");
       if (!keepWild && elements.wildAwakeningOverlay) elements.wildAwakeningOverlay.className = "wild-awakening-overlay";
@@ -219,6 +328,11 @@
       buildPaytable,
       buildCombinationReference,
       updateDisplay,
+      updateFortuneMeter,
+      animateFortuneGain,
+      setFortuneSpinActive,
+      showFortuneResult,
+      hideFortuneResult,
       setControlsDisabled,
       setPrimaryAction,
       setWinDisplay,

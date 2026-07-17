@@ -21,10 +21,10 @@
     expandingWilds: true,
     scatters: false,
     freeSpins: false,
-    momentumMeter: false,
+    fortuneMeter: true,
     dailyRewards: false,
     advancedAudio: false,
-    manualStops: false,
+    manualStops: true,
     riskGame: false,
     mysteryModifiers: false,
     combinationBonuses: true,
@@ -49,7 +49,7 @@
   });
 
   app.CONFIG = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     startingCoins: 1000,
     rowCount: 3,
     rtpTargets: {
@@ -57,6 +57,8 @@
       expandingWildIncrement: { minimum: 0.025, maximum: 0.035 },
       combinations: { minimum: 0.0175, maximum: 0.0235 },
       featurePassTotal: { minimum: 0.86, maximum: 0.875 },
+      fortuneIncrement: { minimum: 0.008, maximum: 0.012 },
+      fortuneTotal: { minimum: 0.876, maximum: 0.88 },
       total: { minimum: 0.96, maximum: 0.97 },
     },
     features: FEATURES,
@@ -96,6 +98,26 @@
       settleDistanceScale: 0.35,
     },
     anticipation: { delays: { none: 0, mild: 350, strong: 650 } },
+    fortuneMeter: {
+      capacity: 100,
+      multiplier: 1.5,
+      gains: {
+        paidSpin: 2,
+        smallWin: 1,
+        niceWin: 3,
+        bigWin: 8,
+        combination: 3,
+        fullCommune: 10,
+      },
+    },
+    manualStops: {
+      minimumStopTimes: [650, 900, 1150],
+      minimumGapBetweenStops: 180,
+      finalApproachDuration: 220,
+      reducedMotionApproachDuration: 120,
+      anticipationMinimumHold: { mild: 150, strong: 300 },
+      reducedMotionAnticipationHold: { mild: 60, strong: 100 },
+    },
     characterAccentColors: ["#d3d8e8", "#86a66a", "#a276ff", "#89d2ff", "#e0aa3e", "#65e6cc", "#ff7fba"],
     characterAccentColorMap: {
       STR: "#d3d8e8", CYD: "#86a66a", RYN: "#a276ff", GAB: "#89d2ff",
@@ -126,5 +148,5 @@
   };
 
   app.GAME_STATES = GAME_STATES;
-  app.constants = { storageKey: "commune-fortune-v3", legacyStorageKeys: ["commune-fortune-v2", "commune-fortune-v1"] };
+  app.constants = { storageKey: "commune-fortune-v4", legacyStorageKeys: ["commune-fortune-v3", "commune-fortune-v2", "commune-fortune-v1"] };
 })();

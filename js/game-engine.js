@@ -8,6 +8,8 @@
   let phase = state.pendingSpin ? GAME_STATES.RESOLVING : GAME_STATES.IDLE;
   let presentationAbortController = null;
   let presentationCleanup = null;
+  let activeSpinResult = state.pendingSpin || null;
+  let manualStopSnapshot = null;
   state.gamePhase = phase;
 
   const audio = app.audio.createAudio(() => state.sound);
@@ -21,6 +23,10 @@
       ui.setAnticipation(level, active);
       app.effects.setAnticipation(ui.elements.machine, reels.getReelElements(), level, active);
       if (active) audio.playAnticipation(level);
+    },
+    onManualStopStateChange: snapshot => {
+      manualStopSnapshot = snapshot;
+      if (phase === GAME_STATES.SPINNING) updateDisplay();
     },
   });
 
@@ -79,10 +85,18 @@
   }
 
   function updateDisplay() {
-    ui.updateDisplay({ state, phase, lineBet: getLineBet(), totalBet: getTotalBet() });
+    ui.updateDisplay({
+      state,
+      phase,
+      lineBet: getLineBet(),
+      totalBet: getTotalBet(),
+      manualStopState: manualStopSnapshot,
+      fortuneSpinActive: Boolean(activeSpinResult?.fortuneSpin?.active && phase !== GAME_STATES.IDLE),
+    });
   }
 
-  function chooseLossMessage() {
+  function chooseLossMessage(result = null) {
+    if (result?.fortuneSpin?.active) return "The Fortune Spin was consumed. No win this time.";
     const messages = ["No line this time.", "Close. Give it another spin.", "The Commons keeps its coins this round.", "Nothing matched across an active line.", "A cold spin. The next one may turn."];
     return messages[Math.floor(Math.random() * messages.length)];
   }
@@ -92,10 +106,24 @@
   }
 
   function recoverPendingSpin() {
-    if (!state.pendingSpin) { setPhase(GAME_STATES.IDLE, { force: true }); return false; }
+    if (!state.pendingSpin) {
+      setPhase(GAME_STATES.IDLE, { force: true });
+      activeSpinResult = null;
+      return false;
+    }
+    const meterBefore = app.payouts.normalizeFortuneMeter(state.fortuneMeter);
     const recovered = settlePendingSpin();
     setPhase(GAME_STATES.IDLE, { force: true });
+    activeSpinResult = null;
     saveState();
+    if (recovered?.fortuneMeterAward?.totalPoints > 0 || recovered?.fortuneMeterAward?.jackpotCharge) {
+      ui.animateFortuneGain({
+        from: meterBefore.value,
+        to: state.fortuneMeter.value,
+        award: recovered.fortuneMeterAward,
+        charged: state.fortuneMeter.charged,
+      });
+    }
     if (recovered?.totalWin > 0) ui.showMessage(`Recovered an interrupted spin and credited ${ui.formatNumber(recovered.totalWin)} coins.`, true);
     else ui.showMessage("Recovered an interrupted spin. No win was due.");
     return true;
@@ -106,7 +134,8 @@
       ? `${result.lineWins.length} winning line${result.lineWins.length === 1 ? "" : "s"}`
       : "No ordinary line win";
     const combinationPart = result.combinationWins.length ? ` plus ${result.combinationWins.map(win => win.name).join(", ")}` : "";
-    return `${linePart}${combinationPart}. You won ${ui.formatNumber(result.totalWin)} coins!`;
+    const fortunePart = result.fortuneSpin?.active && result.fortuneBonus > 0 ? ` Fortune added ${ui.formatNumber(result.fortuneBonus)} coins.` : "";
+    return `${linePart}${combinationPart}. You won ${ui.formatNumber(result.totalWin)} coins!${fortunePart}`;
   }
 
   function ensurePresentationMode() {
@@ -123,6 +152,7 @@
     presentationAbortController = null;
     ui.hideCelebration();
     ui.hideCombinationCallout();
+    ui.hideFortuneResult();
     ui.setPrimaryAction("spin");
     if (phase !== GAME_STATES.IDLE) setPhase(GAME_STATES.IDLE, { force: true, persist: true });
   }
@@ -149,6 +179,15 @@
       ui.hideCombinationCallout();
       ui.clearCombinationMarks();
     }
+  }
+
+  async function presentFortuneModifier(result) {
+    if (!result.fortuneSpin?.active || result.totalWin <= 0) return;
+    const signal = ensurePresentationMode();
+    if (signal.aborted) return;
+    ui.showFortuneResult(result);
+    await app.effects.wait(app.effects.prefersReducedMotion() ? 380 : 900, { signal });
+    ui.hideFortuneResult();
   }
 
   function presentSmallWin(result, tier) {
@@ -190,13 +229,13 @@
   async function presentResult(result) {
     if (presentationAbortController?.signal.aborted) {
       ui.setWinDisplay(result.totalWin);
-      ui.showMessage(result.totalWin > 0 ? getWinMessage(result) : chooseLossMessage(), result.totalWin > 0);
+      ui.showMessage(result.totalWin > 0 ? getWinMessage(result) : chooseLossMessage(result), result.totalWin > 0);
       endPresentationMode();
       return;
     }
 
     if (result.totalWin <= 0) {
-      ui.showMessage(chooseLossMessage());
+      ui.showMessage(chooseLossMessage(result));
       audio.playLossSound();
       if (phase === GAME_STATES.CELEBRATING) endPresentationMode();
       return;
@@ -225,8 +264,7 @@
     ui.clearFeaturePresentation();
     ui.hideCelebration();
     ui.setSpinning(true);
-    ui.setControlsDisabled(true, state);
-    ui.showMessage("The reels are turning…");
+    ui.showMessage(state.fortuneMeter?.charged ? "Fortune Spin activated." : "The reels are turning…");
     audio.playSpinStart();
 
     try {
@@ -242,9 +280,11 @@
           : { expandingWild: { roll: forcedOutcome.roll } },
       });
 
+      app.payouts.consumeFortuneChargeState(state, spinResult);
       state.coins -= totalBet;
       state.lastWin = 0;
       state.pendingSpin = spinResult;
+      activeSpinResult = spinResult;
       saveState();
       updateDisplay();
 
@@ -252,16 +292,26 @@
         anticipation: CONFIG.features.spinDrama ? spinResult.anticipation : "none",
         reducedMotion: app.effects.prefersReducedMotion(),
         dramaEnabled: CONFIG.features.spinDrama,
+        manualStopsEnabled: CONFIG.features.manualStops,
       });
       ui.setSpinning(false);
       setPhase(GAME_STATES.RESOLVING);
 
-      await presentFeatureSequence(spinResult);
-
+      const meterBeforeSettlement = app.payouts.normalizeFortuneMeter(state.fortuneMeter);
       const settledResult = settlePendingSpin();
       if (!settledResult) throw new Error("Spin result was already settled or unavailable.");
       saveState();
       statistics.recordSpin({ wager: settledResult.wager, payout: settledResult.totalWin });
+      ui.animateFortuneGain({
+        from: meterBeforeSettlement.value,
+        to: state.fortuneMeter.value,
+        award: settledResult.fortuneMeterAward,
+        charged: state.fortuneMeter.charged,
+      });
+      updateDisplay();
+
+      await presentFeatureSequence(settledResult);
+      await presentFortuneModifier(settledResult);
       await app.bonuses.afterSpin({ state, spinResult: settledResult });
       await presentResult(settledResult);
 
@@ -276,7 +326,16 @@
       ui.hideCelebration();
       ui.clearFeaturePresentation();
       ui.setAnticipation("none", false);
+      const meterBeforeSettlement = app.payouts.normalizeFortuneMeter(state.fortuneMeter);
       const recovered = settlePendingSpin();
+      if (recovered) {
+        ui.animateFortuneGain({
+          from: meterBeforeSettlement.value,
+          to: state.fortuneMeter.value,
+          award: recovered.fortuneMeterAward,
+          charged: state.fortuneMeter.charged,
+        });
+      }
       setPhase(GAME_STATES.IDLE, { force: true });
       saveState();
       ui.setSpinning(false);
@@ -284,8 +343,12 @@
       else ui.showMessage("The spin was interrupted and safely resolved. Try again.");
     } finally {
       if (phase !== GAME_STATES.IDLE) setPhase(GAME_STATES.IDLE, { force: true, persist: true });
+      activeSpinResult = null;
+      manualStopSnapshot = null;
       ui.hideCelebration();
       ui.hideCombinationCallout();
+      ui.hideFortuneResult();
+      ui.setFortuneSpinActive(false);
       ui.setPrimaryAction("spin");
       ui.setControlsDisabled(false, state);
       updateDisplay();
@@ -298,8 +361,23 @@
     return true;
   }
 
+  function requestManualStop() {
+    if (phase !== GAME_STATES.SPINNING || !CONFIG.features.manualStops) return false;
+    const request = reels.requestNextStop();
+    if (!request.accepted) return false;
+    manualStopSnapshot = reels.getManualStopState();
+    updateDisplay();
+    return true;
+  }
+
   function handlePrimaryAction() {
-    return app.gameFlow.routePrimaryAction({ phase, onSpin: () => { void spin(); }, onSkip: skipCelebration });
+    return app.gameFlow.routePrimaryAction({
+      phase,
+      manualStopsEnabled: CONFIG.features.manualStops,
+      onSpin: () => { void spin(); },
+      onStop: requestManualStop,
+      onSkip: skipCelebration,
+    });
   }
 
   function adjustBet(direction) {
@@ -362,11 +440,13 @@
   app.game = {
     spin,
     handlePrimaryAction,
+    requestManualStop,
     skipCelebration,
     adjustBet,
     refill,
-    getState: () => ({ ...state }),
+    getState: () => ({ ...state, fortuneMeter: { ...state.fortuneMeter } }),
     getPhase: () => phase,
+    getManualStopState: () => reels.getManualStopState(),
     getSessionStatistics: statistics.snapshot,
     getDevelopmentForcedOutcome: () => isDevelopmentHost ? readDevelopmentForcedOutcome() : null,
   };

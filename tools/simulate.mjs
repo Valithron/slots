@@ -9,18 +9,17 @@ const args = new Map(process.argv.slice(2).map(arg => {
   const [key, value = true] = arg.replace(/^--/, "").split("=");
   return [key, value];
 }));
-const state = { lineBetIndex: 0 };
+const state = { lineBetIndex: 0, fortuneMeter: { value: 0, charged: false } };
 const wager = payouts.getTotalBet(state);
-const requestedSpins = args.has("spins") ? Number(args.get("spins")) : null;
-const seed = args.has("seed") ? Number(args.get("seed")) : 20260717;
 const outputJson = args.has("json");
 const checkTarget = args.has("check");
 
 const MODES = Object.freeze([
-  { id: "base", name: "Base only", expandingWilds: false, combinationBonuses: false },
-  { id: "wild", name: "Base + expanding Wild", expandingWilds: true, combinationBonuses: false },
-  { id: "combinations", name: "Base + combinations", expandingWilds: false, combinationBonuses: true },
-  { id: "both", name: "Base + both", expandingWilds: true, combinationBonuses: true },
+  { id: "base", name: "Base only", expandingWilds: false, combinationBonuses: false, fortuneMeter: false },
+  { id: "wild", name: "Base + Tree", expandingWilds: true, combinationBonuses: false, fortuneMeter: false },
+  { id: "combinations", name: "Base + combinations", expandingWilds: false, combinationBonuses: true, fortuneMeter: false },
+  { id: "both", name: "Base + Tree + combinations", expandingWilds: true, combinationBonuses: true, fortuneMeter: false },
+  { id: "fortune", name: "Base + Tree + combinations + Fortune Meter", expandingWilds: true, combinationBonuses: true, fortuneMeter: true },
 ]);
 
 function validateConfig() {
@@ -30,25 +29,8 @@ function validateConfig() {
     if (!Array.isArray(reel) || reel.length < CONFIG.rowCount) throw new Error(`Reel ${reelIndex + 1} is shorter than the visible row count.`);
     reel.forEach(symbolKey => { if (!CONFIG.symbols[symbolKey]) throw new Error(`Reel ${reelIndex + 1} references unknown symbol ${symbolKey}.`); });
   });
-  CONFIG.paylines.forEach((line, lineIndex) => {
-    if (!Array.isArray(line) || line.length !== CONFIG.reels.length) throw new Error(`Payline ${lineIndex + 1} must contain one row per reel.`);
-    line.forEach(row => { if (!Number.isInteger(row) || row < 0 || row >= CONFIG.rowCount) throw new Error(`Payline ${lineIndex + 1} contains invalid row ${row}.`); });
-  });
-  if (!Number.isInteger(CONFIG.expandingWild.outcomes) || CONFIG.expandingWild.outcomes < 1) throw new Error("Expanding-Wild outcomes must be positive.");
-  CONFIG.expandingWild.activatingRolls.forEach(roll => {
-    if (!Number.isInteger(roll) || roll < 0 || roll >= CONFIG.expandingWild.outcomes) throw new Error(`Invalid expanding-Wild activating roll ${roll}.`);
-  });
-}
-
-function mulberry32(initialSeed) {
-  let value = initialSeed >>> 0;
-  return () => {
-    value += 0x6D2B79F5;
-    let result = value;
-    result = Math.imul(result ^ result >>> 15, result | 1);
-    result ^= result + Math.imul(result ^ result >>> 7, result | 61);
-    return ((result ^ result >>> 14) >>> 0) / 4294967296;
-  };
+  if (!Number.isInteger(CONFIG.fortuneMeter.capacity) || CONFIG.fortuneMeter.capacity < 1) throw new Error("Fortune capacity must be a positive integer.");
+  if (CONFIG.fortuneMeter.multiplier < 1) throw new Error("Fortune multiplier cannot reduce a payout.");
 }
 
 function* enumerateStops(reels, reelIndex = 0, prefix = []) {
@@ -56,111 +38,219 @@ function* enumerateStops(reels, reelIndex = 0, prefix = []) {
   for (let stop = 0; stop < reels[reelIndex].length; stop += 1) yield* enumerateStops(reels, reelIndex + 1, [...prefix, stop]);
 }
 
+function increment(map, key, amount = 1) {
+  map.set(key, (map.get(key) || 0) + amount);
+}
+
+function mapToObject(map, denominator = null, numeric = false) {
+  return Object.fromEntries([...map.entries()]
+    .sort((a, b) => numeric ? Number(a[0]) - Number(b[0]) : String(a[0]).localeCompare(String(b[0])))
+    .map(([key, value]) => [key, denominator ? value / denominator : value]));
+}
+
 function createAccumulator(mode) {
-  const combinationDefinitions = [...CONFIG.combinations.definitions, CONFIG.combinations.fullCommune];
+  const definitions = [...CONFIG.combinations.definitions, CONFIG.combinations.fullCommune];
   return {
-    mode, outcomes: 0, totalWagered: 0, baseLinePaid: 0, resolvedLinePaid: 0, combinationPaid: 0, totalPaid: 0,
-    winningOutcomes: 0, partialReturnOutcomes: 0, breakEvenOutcomes: 0, profitableOutcomes: 0,
-    wildEligibleOutcomes: 0, wildActivatedOutcomes: 0, expandedResolvedLinePaid: 0, expandedIncrementalLinePaid: 0,
-    maximumPayout: 0, maximumStops: null, maximumRoll: null,
-    lineCountDistribution: new Map(), payoutDistribution: new Map(), symbolPayouts: new Map(), tierDistribution: new Map(), transformationCountDistribution: new Map(),
-    combinationCounts: new Map(combinationDefinitions.map(definition => [definition.id, 0])),
-    combinationPayouts: new Map(combinationDefinitions.map(definition => [definition.id, 0])),
+    mode,
+    outcomes: 0,
+    totalWagered: 0,
+    baseLinePaid: 0,
+    resolvedLinePaid: 0,
+    combinationPaid: 0,
+    naturalPaid: 0,
+    winningOutcomes: 0,
+    wildEligibleOutcomes: 0,
+    wildActivatedOutcomes: 0,
+    maximumNaturalPayout: 0,
+    maximumStops: null,
+    maximumRoll: null,
+    lineCountDistribution: new Map(),
+    naturalPayoutDistribution: new Map(),
+    symbolPayouts: new Map(),
+    tierDistribution: new Map(),
+    transformationCountDistribution: new Map(),
+    combinationCounts: new Map(definitions.map(definition => [definition.id, 0])),
+    combinationPayouts: new Map(definitions.map(definition => [definition.id, 0])),
+    fortuneGainCounts: new Map(),
+    fortuneBonusPaidIfActive: 0,
+    fortuneFinalPaidIfActive: 0,
+    fortuneLossOutcomes: 0,
+    fortuneTierDistribution: new Map(),
+    maximumFortunePayout: 0,
   };
 }
 
 function record(accumulator, targetStops, roll) {
+  const flags = {
+    ...CONFIG.features,
+    expandingWilds: accumulator.mode.expandingWilds,
+    combinationBonuses: accumulator.mode.combinationBonuses,
+    fortuneMeter: accumulator.mode.fortuneMeter,
+    manualStops: false,
+    spinDrama: false,
+  };
+  const naturalState = { ...state, fortuneMeter: { value: 0, charged: false } };
   const result = payouts.createSpinResult({
-    targetStops, state, id: "simulation", createdAt: "simulation",
-    featureFlags: { ...CONFIG.features, expandingWilds: accumulator.mode.expandingWilds, combinationBonuses: accumulator.mode.combinationBonuses, spinDrama: false },
+    targetStops,
+    state: naturalState,
+    id: "simulation",
+    createdAt: "simulation",
+    featureFlags: flags,
     featureRolls: { expandingWild: { roll } },
   });
+
   accumulator.outcomes += 1;
   accumulator.totalWagered += wager;
   accumulator.baseLinePaid += result.baseLineWinTotal;
   accumulator.resolvedLinePaid += result.lineWinTotal;
   accumulator.combinationPaid += result.combinationWinTotal;
-  accumulator.totalPaid += result.totalWin;
-  if (result.totalWin > 0) accumulator.winningOutcomes += 1;
-  if (result.totalWin > 0 && result.totalWin < wager) accumulator.partialReturnOutcomes += 1;
-  if (result.totalWin === wager) accumulator.breakEvenOutcomes += 1;
-  if (result.totalWin > wager) accumulator.profitableOutcomes += 1;
+  accumulator.naturalPaid += result.preModifierWin;
+  if (result.preModifierWin > 0) accumulator.winningOutcomes += 1;
   if (result.featureRolls.expandingWild.eligible) accumulator.wildEligibleOutcomes += 1;
-  if (result.featureRolls.expandingWild.activated) {
-    accumulator.wildActivatedOutcomes += 1;
-    accumulator.expandedResolvedLinePaid += result.lineWinTotal;
-    accumulator.expandedIncrementalLinePaid += result.lineWinTotal - result.baseLineWinTotal;
-  }
-  if (result.totalWin > accumulator.maximumPayout) {
-    accumulator.maximumPayout = result.totalWin;
+  if (result.featureRolls.expandingWild.activated) accumulator.wildActivatedOutcomes += 1;
+  if (result.preModifierWin > accumulator.maximumNaturalPayout) {
+    accumulator.maximumNaturalPayout = result.preModifierWin;
     accumulator.maximumStops = [...targetStops];
     accumulator.maximumRoll = roll;
   }
-  accumulator.lineCountDistribution.set(result.lineWins.length, (accumulator.lineCountDistribution.get(result.lineWins.length) || 0) + 1);
-  accumulator.payoutDistribution.set(result.totalWin, (accumulator.payoutDistribution.get(result.totalWin) || 0) + 1);
-  result.lineWins.forEach(win => accumulator.symbolPayouts.set(win.symbolKey, (accumulator.symbolPayouts.get(win.symbolKey) || 0) + win.payout));
-  accumulator.tierDistribution.set(result.winTier, (accumulator.tierDistribution.get(result.winTier) || 0) + 1);
-  accumulator.transformationCountDistribution.set(result.transformations.length, (accumulator.transformationCountDistribution.get(result.transformations.length) || 0) + 1);
+  increment(accumulator.lineCountDistribution, result.lineWins.length);
+  increment(accumulator.naturalPayoutDistribution, result.preModifierWin);
+  result.lineWins.forEach(win => increment(accumulator.symbolPayouts, win.symbolKey, win.payout));
+  increment(accumulator.tierDistribution, result.naturalWinTier);
+  increment(accumulator.transformationCountDistribution, result.transformations.length);
   result.combinationWins.forEach(win => {
-    accumulator.combinationCounts.set(win.id, (accumulator.combinationCounts.get(win.id) || 0) + 1);
-    accumulator.combinationPayouts.set(win.id, (accumulator.combinationPayouts.get(win.id) || 0) + win.payout);
+    increment(accumulator.combinationCounts, win.id);
+    increment(accumulator.combinationPayouts, win.id, win.payout);
   });
+
+  if (accumulator.mode.fortuneMeter) {
+    const awardKey = result.fortuneMeterAward.jackpotCharge ? "jackpot" : result.fortuneMeterAward.totalPoints;
+    increment(accumulator.fortuneGainCounts, awardKey);
+    const activeState = { ...state, fortuneMeter: { value: CONFIG.fortuneMeter.capacity, charged: true } };
+    const active = payouts.createSpinResult({
+      targetStops,
+      state: activeState,
+      id: "simulation-fortune",
+      createdAt: "simulation",
+      featureFlags: flags,
+      featureRolls: { expandingWild: { roll } },
+    });
+    accumulator.fortuneBonusPaidIfActive += active.fortuneBonus;
+    accumulator.fortuneFinalPaidIfActive += active.totalWin;
+    if (active.totalWin === 0) accumulator.fortuneLossOutcomes += 1;
+    increment(accumulator.fortuneTierDistribution, active.winTier);
+    accumulator.maximumFortunePayout = Math.max(accumulator.maximumFortunePayout, active.totalWin);
+  }
 }
 
 function runExact(mode) {
   const accumulator = createAccumulator(mode);
-  for (const stops of enumerateStops(CONFIG.reels)) for (let roll = 0; roll < CONFIG.expandingWild.outcomes; roll += 1) record(accumulator, stops, roll);
-  return accumulator;
-}
-
-function runMonteCarlo(mode, spins, randomSeed) {
-  if (!Number.isInteger(spins) || spins < 1) throw new Error("--spins must be a positive integer.");
-  const accumulator = createAccumulator(mode);
-  const rng = mulberry32(randomSeed);
-  for (let spin = 0; spin < spins; spin += 1) {
-    const stops = CONFIG.reels.map(reel => Math.floor(rng() * reel.length));
-    const roll = Math.floor(rng() * CONFIG.expandingWild.outcomes);
-    record(accumulator, stops, roll);
+  for (const stops of enumerateStops(CONFIG.reels)) {
+    for (let roll = 0; roll < CONFIG.expandingWild.outcomes; roll += 1) record(accumulator, stops, roll);
   }
   return accumulator;
 }
 
-function mapToObject(map, denominator = null, numeric = false) {
-  return Object.fromEntries([...map.entries()].sort((a, b) => numeric ? Number(a[0]) - Number(b[0]) : String(a[0]).localeCompare(String(b[0]))).map(([key, value]) => [key, denominator ? value / denominator : value]));
+function solveFortuneStationary(accumulator) {
+  const capacity = CONFIG.fortuneMeter.capacity;
+  const transitions = [...accumulator.fortuneGainCounts.entries()].map(([award, count]) => ({
+    jackpot: award === "jackpot",
+    points: award === "jackpot" ? capacity : Number(award),
+    probability: count / accumulator.outcomes,
+  }));
+  let distribution = Array(capacity + 1).fill(0);
+  distribution[0] = 1;
+  let iterations = 0;
+  for (; iterations < 100000; iterations += 1) {
+    const next = Array(capacity + 1).fill(0);
+    for (let meter = 0; meter <= capacity; meter += 1) {
+      if (distribution[meter] === 0) continue;
+      const base = meter === capacity ? 0 : meter;
+      transitions.forEach(transition => {
+        const nextMeter = transition.jackpot ? capacity : Math.min(capacity, base + transition.points);
+        next[nextMeter] += distribution[meter] * transition.probability;
+      });
+    }
+    const delta = Math.max(...next.map((probability, index) => Math.abs(probability - distribution[index])));
+    distribution = next;
+    if (delta < 1e-15) break;
+  }
+  const total = distribution.reduce((sum, probability) => sum + probability, 0);
+  distribution = distribution.map(probability => probability / total);
+  return { distribution, iterations, fortuneSpinFrequency: distribution[capacity] };
 }
 
 function summarize(accumulator) {
-  const totalRtp = accumulator.totalPaid / accumulator.totalWagered;
+  const naturalRtp = accumulator.naturalPaid / accumulator.totalWagered;
   const baseLineRtp = accumulator.baseLinePaid / accumulator.totalWagered;
   const resolvedLineRtp = accumulator.resolvedLinePaid / accumulator.totalWagered;
   const incrementalWildRtp = (accumulator.resolvedLinePaid - accumulator.baseLinePaid) / accumulator.totalWagered;
   const combinationRtp = accumulator.combinationPaid / accumulator.totalWagered;
-  const symbolContribution = Object.fromEntries([...accumulator.symbolPayouts.entries()].sort((a, b) => b[1] - a[1]).map(([symbolKey, payout]) => [symbolKey, payout / accumulator.totalWagered]));
-  return {
-    id: accumulator.mode.id, name: accumulator.mode.name, mode: requestedSpins ? "monte-carlo" : "exact", seed: requestedSpins ? seed : null,
-    featureFlags: { expandingWilds: accumulator.mode.expandingWilds, combinationBonuses: accumulator.mode.combinationBonuses },
-    outcomes: accumulator.outcomes, wagerPerSpin: wager, totalWagered: accumulator.totalWagered, totalPaid: accumulator.totalPaid,
-    baseLineRtp, resolvedLineRtp, incrementalWildRtp, combinationRtp, totalRtp, houseEdge: 1 - totalRtp,
+  const common = {
+    id: accumulator.mode.id,
+    name: accumulator.mode.name,
+    mode: "exact-state-transition",
+    featureFlags: {
+      expandingWilds: accumulator.mode.expandingWilds,
+      combinationBonuses: accumulator.mode.combinationBonuses,
+      fortuneMeter: accumulator.mode.fortuneMeter,
+      manualStops: false,
+    },
+    outcomes: accumulator.outcomes,
+    wagerPerSpin: wager,
+    totalWagered: accumulator.totalWagered,
+    baseLineRtp,
+    resolvedLineRtp,
+    incrementalWildRtp,
+    combinationRtp,
+    naturalRtp,
+    totalRtp: naturalRtp,
     anyReturnFrequency: accumulator.winningOutcomes / accumulator.outcomes,
-    partialReturnFrequency: accumulator.partialReturnOutcomes / accumulator.outcomes,
-    breakEvenFrequency: accumulator.breakEvenOutcomes / accumulator.outcomes,
-    netProfitableFrequency: accumulator.profitableOutcomes / accumulator.outcomes,
-    averagePayoutPerSpin: accumulator.totalPaid / accumulator.outcomes,
-    averagePayoutOnWin: accumulator.winningOutcomes ? accumulator.totalPaid / accumulator.winningOutcomes : 0,
-    expectedLossPerSpin: wager - accumulator.totalPaid / accumulator.outcomes,
     wildEligibilityFrequency: accumulator.wildEligibleOutcomes / accumulator.outcomes,
     wildActivationFrequency: accumulator.wildActivatedOutcomes / accumulator.outcomes,
-    expandedResolvedLineRtp: accumulator.expandedResolvedLinePaid / accumulator.totalWagered,
-    expandedIncrementalLineRtp: accumulator.expandedIncrementalLinePaid / accumulator.totalWagered,
-    combinationTriggerFrequency: mapToObject(accumulator.combinationCounts, accumulator.outcomes),
-    combinationRtpContribution: mapToObject(accumulator.combinationPayouts, accumulator.totalWagered),
-    fullCommuneFrequency: (accumulator.combinationCounts.get("full-commune") || 0) / accumulator.outcomes,
-    maximumPayout: accumulator.maximumPayout, maximumPayoutMultiple: accumulator.maximumPayout / wager, maximumStops: accumulator.maximumStops, maximumRoll: accumulator.maximumRoll,
+    maximumPayout: accumulator.maximumNaturalPayout,
+    maximumPayoutMultiple: accumulator.maximumNaturalPayout / wager,
+    maximumStops: accumulator.maximumStops,
+    maximumRoll: accumulator.maximumRoll,
     lineCountDistribution: mapToObject(accumulator.lineCountDistribution, accumulator.outcomes, true),
-    payoutDistribution: mapToObject(accumulator.payoutDistribution, accumulator.outcomes, true),
-    symbolContribution,
+    payoutDistribution: mapToObject(accumulator.naturalPayoutDistribution, accumulator.outcomes, true),
+    symbolContribution: mapToObject(accumulator.symbolPayouts, accumulator.totalWagered),
     winTierDistribution: mapToObject(accumulator.tierDistribution, accumulator.outcomes),
     transformationCountDistribution: mapToObject(accumulator.transformationCountDistribution, accumulator.outcomes, true),
+    combinationTriggerFrequency: mapToObject(accumulator.combinationCounts, accumulator.outcomes),
+    combinationRtpContribution: mapToObject(accumulator.combinationPayouts, accumulator.totalWagered),
+  };
+  if (!accumulator.mode.fortuneMeter) return common;
+
+  const stationary = solveFortuneStationary(accumulator);
+  const fortuneSpinFrequency = stationary.fortuneSpinFrequency;
+  const averageNaturalWinOnFortuneSpin = accumulator.naturalPaid / accumulator.outcomes;
+  const averageFinalWinOnFortuneSpin = accumulator.fortuneFinalPaidIfActive / accumulator.outcomes;
+  const averageFortuneBonus = accumulator.fortuneBonusPaidIfActive / accumulator.outcomes;
+  const incrementalFortuneRtp = fortuneSpinFrequency * averageFortuneBonus / wager;
+  return {
+    ...common,
+    rtpBeforeFortune: naturalRtp,
+    incrementalFortuneRtp,
+    totalRtp: naturalRtp + incrementalFortuneRtp,
+    fortuneSpinFrequency,
+    averageSpinsBetweenFortuneSpins: 1 / fortuneSpinFrequency,
+    averageMeterCycleLength: 1 / fortuneSpinFrequency,
+    averageMeterPointsPerPaidSpin: [...accumulator.fortuneGainCounts.entries()].reduce((sum, [award, count]) => {
+      return sum + (award === "jackpot" ? CONFIG.fortuneMeter.capacity : Number(award)) * count;
+    }, 0) / accumulator.outcomes,
+    averageNaturalWinOnFortuneSpin,
+    averageFinalWinOnFortuneSpin,
+    averageFortuneBonus,
+    fortuneSpinLossFrequency: accumulator.fortuneLossOutcomes / accumulator.outcomes,
+    fortuneSpinTierDistribution: mapToObject(accumulator.fortuneTierDistribution, accumulator.outcomes),
+    fortuneGainDistribution: mapToObject(accumulator.fortuneGainCounts, accumulator.outcomes, true),
+    maximumPayout: accumulator.maximumFortunePayout,
+    maximumPayoutMultiple: accumulator.maximumFortunePayout / wager,
+    maximumNaturalPayout: accumulator.maximumNaturalPayout,
+    maximumNaturalPayoutMultiple: accumulator.maximumNaturalPayout / wager,
+    meterStateIterations: stationary.iterations,
+    meterStateDistribution: Object.fromEntries(stationary.distribution.map((probability, meter) => [meter, probability])),
   };
 }
 
@@ -168,57 +258,75 @@ const percentage = value => `${(value * 100).toFixed(4)}%`;
 
 function printReport(report) {
   console.log(`\n${report.name} (${report.mode})`);
-  console.log("=".repeat(64));
-  console.log(`Weighted outcomes:                ${report.outcomes.toLocaleString()}`);
-  console.log(`Wager per spin:                   ${report.wagerPerSpin}`);
-  console.log(`Base line RTP:                    ${percentage(report.baseLineRtp)}`);
-  console.log(`Incremental expanding-Wild RTP:   ${percentage(report.incrementalWildRtp)}`);
-  console.log(`Combination RTP:                  ${percentage(report.combinationRtp)}`);
-  console.log(`Combined total RTP:               ${percentage(report.totalRtp)}`);
-  console.log(`House edge:                       ${percentage(report.houseEdge)}`);
-  console.log(`Any-return frequency:             ${percentage(report.anyReturnFrequency)}`);
-  console.log(`Partial-return frequency:         ${percentage(report.partialReturnFrequency)}`);
-  console.log(`Break-even frequency:             ${percentage(report.breakEvenFrequency)}`);
-  console.log(`Net-profitable frequency:         ${percentage(report.netProfitableFrequency)}`);
-  console.log(`Average payout per spin:          ${report.averagePayoutPerSpin.toFixed(6)}`);
-  console.log(`Average payout on a win:          ${report.averagePayoutOnWin.toFixed(6)}`);
-  console.log(`Expected loss per spin:           ${report.expectedLossPerSpin.toFixed(6)}`);
-  console.log(`Wild eligibility frequency:       ${percentage(report.wildEligibilityFrequency)}`);
-  console.log(`Wild activation frequency:        ${percentage(report.wildActivationFrequency)}`);
-  console.log(`Resolved line RTP on activations: ${percentage(report.expandedResolvedLineRtp)}`);
-  console.log(`Incremental RTP on activations:   ${percentage(report.expandedIncrementalLineRtp)}`);
-  console.log(`Maximum payout:                   ${report.maximumPayout} (${report.maximumPayoutMultiple.toFixed(2)}x total bet)`);
-  console.log(`Maximum stops / roll:             [${report.maximumStops.join(", ")}] / ${report.maximumRoll}`);
-  console.log("\nCombination triggers and RTP:");
-  for (const definition of [...CONFIG.combinations.definitions, CONFIG.combinations.fullCommune]) {
-    const trigger = percentage(report.combinationTriggerFrequency[definition.id] || 0).padEnd(10);
-    const contribution = percentage(report.combinationRtpContribution[definition.id] || 0);
-    console.log(`  ${definition.name.padEnd(15)} ${trigger} ${contribution}`);
+  console.log("=".repeat(72));
+  console.log(`Weighted outcomes:                    ${report.outcomes.toLocaleString()}`);
+  console.log(`Base line RTP:                        ${percentage(report.baseLineRtp)}`);
+  console.log(`Incremental Tree RTP:                 ${percentage(report.incrementalWildRtp)}`);
+  console.log(`Combination RTP:                      ${percentage(report.combinationRtp)}`);
+  if (report.id === "fortune") {
+    console.log(`RTP before Fortune:                   ${percentage(report.rtpBeforeFortune)}`);
+    console.log(`Incremental Fortune RTP:              ${percentage(report.incrementalFortuneRtp)}`);
+    console.log(`Final combined RTP:                   ${percentage(report.totalRtp)}`);
+    console.log(`Fortune Spin frequency:               ${percentage(report.fortuneSpinFrequency)}`);
+    console.log(`Average spins between Fortune Spins:  ${report.averageSpinsBetweenFortuneSpins.toFixed(4)}`);
+    console.log(`Average natural Fortune-spin win:     ${report.averageNaturalWinOnFortuneSpin.toFixed(6)}`);
+    console.log(`Average final Fortune-spin win:       ${report.averageFinalWinOnFortuneSpin.toFixed(6)}`);
+    console.log(`Average Fortune bonus:                ${report.averageFortuneBonus.toFixed(6)}`);
+    console.log(`Fortune Spin zero-pay frequency:      ${percentage(report.fortuneSpinLossFrequency)}`);
+    console.log(`Average meter gain per paid spin:     ${report.averageMeterPointsPerPaidSpin.toFixed(6)}`);
+    console.log(`Average meter cycle length:           ${report.averageMeterCycleLength.toFixed(4)}`);
+    console.log(`Maximum Fortune payout:               ${report.maximumPayout} (${report.maximumPayoutMultiple.toFixed(2)}x total bet)`);
+    console.log("Fortune Spin tier distribution:");
+    Object.entries(report.fortuneSpinTierDistribution).forEach(([tier, frequency]) => console.log(`  ${tier.padEnd(10)} ${percentage(frequency)}`));
+    console.log("Long-run meter-state distribution (nonzero states):");
+    Object.entries(report.meterStateDistribution)
+      .filter(([, probability]) => probability > 1e-8)
+      .forEach(([meter, probability]) => console.log(`  ${meter.padStart(3)}: ${percentage(probability)}`));
+  } else {
+    console.log(`Combined total RTP:                   ${percentage(report.totalRtp)}`);
+    console.log(`Maximum payout:                       ${report.maximumPayout} (${report.maximumPayoutMultiple.toFixed(2)}x total bet)`);
   }
-  console.log("\nRTP contribution by resolved winning symbol:");
-  Object.entries(report.symbolContribution).forEach(([symbolKey, contribution]) => console.log(`  ${symbolKey.padEnd(4)} ${percentage(contribution)}`));
-  console.log("\nWinning-line count distribution:");
-  Object.entries(report.lineCountDistribution).forEach(([lineCount, frequency]) => console.log(`  ${lineCount} line(s): ${percentage(frequency)}`));
-  console.log("Win-tier distribution:");
-  Object.entries(report.winTierDistribution).forEach(([tier, frequency]) => console.log(`  ${tier.padEnd(10)} ${percentage(frequency)}`));
-  console.log("Transformation count distribution:");
-  Object.entries(report.transformationCountDistribution).forEach(([count, frequency]) => console.log(`  ${count} transformation(s): ${percentage(frequency)}`));
+}
+
+function assertManualStopIsolation() {
+  const targetStops = [7, 4, 5];
+  const base = {
+    targetStops,
+    state: { lineBetIndex: 0, fortuneMeter: { value: 100, charged: true } },
+    id: "manual-stop-isolation",
+    createdAt: "simulation",
+    featureRolls: { expandingWild: { roll: 0 } },
+  };
+  const off = payouts.createSpinResult({ ...base, featureFlags: { ...CONFIG.features, manualStops: false } });
+  const on = payouts.createSpinResult({ ...base, featureFlags: { ...CONFIG.features, manualStops: true } });
+  const mathFields = ["targetStops", "originalMatrix", "resolvedMatrix", "featureRolls", "transformations", "lineWins", "combinationWins", "preModifierWin", "fortuneMeterAward", "totalWin", "winTier"];
+  mathFields.forEach(field => {
+    if (JSON.stringify(off[field]) !== JSON.stringify(on[field])) throw new Error(`Manual-stop isolation failed for ${field}.`);
+  });
 }
 
 function checkReports(reports) {
   const byId = Object.fromEntries(reports.map(report => [report.id, report]));
   const expectedBase = 0.8200231481481481;
+  const expectedBoth = 0.8679976851851852;
   const failures = [];
   if (Math.abs(byId.base.totalRtp - expectedBase) > 1e-12) failures.push(`Base RTP changed: ${percentage(byId.base.totalRtp)}`);
-  if (byId.wild.incrementalWildRtp < CONFIG.rtpTargets.expandingWildIncrement.minimum || byId.wild.incrementalWildRtp > CONFIG.rtpTargets.expandingWildIncrement.maximum) failures.push(`Wild contribution outside target: ${percentage(byId.wild.incrementalWildRtp)}`);
+  if (byId.wild.incrementalWildRtp < CONFIG.rtpTargets.expandingWildIncrement.minimum || byId.wild.incrementalWildRtp > CONFIG.rtpTargets.expandingWildIncrement.maximum) failures.push(`Tree contribution outside target: ${percentage(byId.wild.incrementalWildRtp)}`);
   if (byId.combinations.combinationRtp < CONFIG.rtpTargets.combinations.minimum || byId.combinations.combinationRtp > CONFIG.rtpTargets.combinations.maximum) failures.push(`Combination contribution outside target: ${percentage(byId.combinations.combinationRtp)}`);
-  if (byId.both.totalRtp < CONFIG.rtpTargets.featurePassTotal.minimum || byId.both.totalRtp > CONFIG.rtpTargets.featurePassTotal.maximum) failures.push(`Combined RTP outside target: ${percentage(byId.both.totalRtp)}`);
-  if (failures.length) { failures.forEach(failure => console.error(`CHECK FAILED: ${failure}`)); process.exitCode = 1; }
-  else console.log("\nExact feature math check: PASS");
+  if (Math.abs(byId.both.totalRtp - expectedBoth) > 1e-12) failures.push(`Pre-Fortune combined RTP changed: ${percentage(byId.both.totalRtp)}`);
+  if (byId.fortune.incrementalFortuneRtp < CONFIG.rtpTargets.fortuneIncrement.minimum || byId.fortune.incrementalFortuneRtp > CONFIG.rtpTargets.fortuneIncrement.maximum) failures.push(`Fortune contribution outside target: ${percentage(byId.fortune.incrementalFortuneRtp)}`);
+  if (byId.fortune.totalRtp < CONFIG.rtpTargets.fortuneTotal.minimum || byId.fortune.totalRtp > CONFIG.rtpTargets.fortuneTotal.maximum) failures.push(`Fortune total outside target: ${percentage(byId.fortune.totalRtp)}`);
+  try { assertManualStopIsolation(); } catch (error) { failures.push(error.message); }
+  if (failures.length) {
+    failures.forEach(failure => console.error(`CHECK FAILED: ${failure}`));
+    process.exitCode = 1;
+  } else {
+    console.log("\nExact feature math and manual-stop isolation check: PASS");
+  }
 }
 
 validateConfig();
-const reports = MODES.map(mode => summarize(requestedSpins ? runMonteCarlo(mode, requestedSpins, seed) : runExact(mode)));
+const reports = MODES.map(mode => summarize(runExact(mode)));
 if (outputJson) console.log(JSON.stringify(reports, null, 2));
 else reports.forEach(printReport);
 if (checkTarget) checkReports(reports);

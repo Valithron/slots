@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="presentation.css" />
   <link rel="stylesheet" href="feature-presentation.css" />
+  <link rel="stylesheet" href="fortune.css" />
 </head>
 <body>
   <main class="app">
@@ -22,7 +23,7 @@
     <section class="machine" id="machine" aria-label="Commune Fortune slot machine">
       <div class="marquee">
         <div class="marquee-title">Commune Fortune</div>
-        <div class="marquee-sub">Five lines · Awakening Wild · Commune combinations</div>
+        <div class="marquee-sub">Five lines · Fortune Spins · Manual reel stops</div>
       </div>
 
       <div class="status-strip">
@@ -31,8 +32,20 @@
         <div class="meter"><span class="meter-label">Last Win</span><span class="meter-value" id="winValue">0</span></div>
       </div>
 
+      <div class="fortune-meter-wrap" id="fortuneMeterWrap">
+        <div class="fortune-meter-header">
+          <span class="fortune-meter-title"><img src="assets/symbols/tree-of-life.svg" alt="" aria-hidden="true"> Fortune</span>
+          <span class="fortune-meter-status" id="fortuneStatus">0 / 100</span>
+        </div>
+        <div class="fortune-progress" id="fortuneProgress" role="progressbar" aria-label="Fortune Meter, 0 of 100" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div class="fortune-progress-fill" id="fortuneFill"></div>
+        </div>
+        <div class="fortune-gain" id="fortuneGain" aria-hidden="true"></div>
+      </div>
+
       <div class="stage">
         <div class="reel-frame" id="reelFrame">
+          <div class="fortune-spin-badge" id="fortuneSpinBadge" aria-hidden="true"><strong>1.5×</strong><span>Fortune Spin</span></div>
           <div class="reel-grid" id="reelGrid" aria-label="Three slot reels"></div>
           <div class="wild-awakening-overlay" id="wildAwakeningOverlay" aria-hidden="true">
             <div class="wild-awakening-light"></div>
@@ -56,6 +69,15 @@
             <div class="combination-kicker">Commune Line</div>
             <div class="combination-title" id="combinationTitle">KPs</div>
             <div class="combination-amount" id="combinationAmount">+8 coins</div>
+          </div>
+        </div>
+
+        <div class="fortune-result-layer" id="fortuneResultLayer" aria-hidden="true">
+          <div class="fortune-result-panel" role="group" aria-label="Fortune Spin result">
+            <div class="fortune-result-title">Fortune Spin</div>
+            <div class="fortune-result-row"><span>Natural Win</span><strong id="fortuneNaturalWin">0</strong></div>
+            <div class="fortune-result-row bonus"><span>Fortune Bonus</span><strong id="fortuneBonusWin">+0</strong></div>
+            <div class="fortune-result-row total"><span>Total Win</span><strong id="fortuneTotalWin">0</strong></div>
           </div>
         </div>
 
@@ -99,9 +121,13 @@
         <li>A Tree that naturally lands in the exact center cell may awaken and fill the middle reel with Wilds.</li>
         <li>The middle row is the Commune Line. Named trios require the exact left-to-right order shown below.</li>
         <li>Full Commune requires all seven members in the grid and the Tree in the exact center cell.</li>
-        <li>Combination bonuses add to ordinary line wins before the final win tier is determined.</li>
+        <li>Every paid spin adds Fortune. Natural wins and Commune combinations add more.</li>
+        <li>At 100 Fortune, the next paid spin becomes a Fortune Spin and multiplies the complete wager-generated win by 1.5×, rounded down.</li>
+        <li>A losing Fortune Spin still consumes the charge and begins the next meter cycle.</li>
+        <li>While reels move, press Stop, Space, or Enter to request the next reel stop. Reels always stop left to right.</li>
+        <li>Manual stopping changes presentation timing only. It cannot change the result, payout, features, or odds.</li>
         <li>Nice Wins and larger presentations can be skipped with Spin, Enter, or Space.</li>
-        <li>Your fake coin balance, pending result, feature roll, and settings save automatically in this browser.</li>
+        <li>Your fake coin balance, Fortune Meter, pending result, feature rolls, and settings save automatically in this browser.</li>
       </ul>
       <h3 class="combination-reference-heading">Commune combinations</h3>
       <div class="combination-reference" id="combinationReference"></div>
@@ -111,6 +137,7 @@
 
   <div class="screen-flash" id="screenFlash"></div>
   <div class="sr-only" id="celebrationAnnouncer" role="status" aria-live="polite" aria-atomic="true"></div>
+  <div class="sr-only" id="fortuneAnnouncer" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <script src="js/config.js" defer></script>
   <script src="js/persistence.js" defer></script>
