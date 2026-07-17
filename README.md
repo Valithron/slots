@@ -1,18 +1,59 @@
 # Commune Fortune
 
-A self-contained, private-play 3x3 slot machine using fake coins only.
+A private-play 3x3 slot machine using fake coins only.
 
 ## Run it
 
-Open `index.html` in a modern browser. No build, server, account, or internet connection is required.
+Open `index.html` in a modern browser. No build, account, database, framework, or internet connection is required.
 
-For the most reliable local testing, you can also run a tiny local server from this folder:
+For the most reliable local testing, run a small static server from the project folder:
 
 ```bash
 python -m http.server 8080
 ```
 
 Then visit `http://localhost:8080`.
+
+## Project structure
+
+```text
+/
+├── index.html
+├── styles.css
+├── js/
+│   ├── config.js
+│   ├── game-engine.js
+│   ├── reels.js
+│   ├── payouts.js
+│   ├── ui.js
+│   ├── effects.js
+│   ├── audio.js
+│   ├── bonuses.js
+│   ├── persistence.js
+│   └── statistics.js
+├── assets/
+│   ├── symbols/
+│   ├── portraits/
+│   ├── effects/
+│   ├── audio/
+│   └── backgrounds/
+└── README.md
+```
+
+The JavaScript uses ordered classic scripts and a single `window.CommuneFortune` namespace. This keeps the game compatible with direct local opening while providing clear boundaries for future mechanics.
+
+### Module responsibilities
+
+- `config.js`: reel maps, symbols, payouts, line bets, and timing values
+- `game-engine.js`: game state and spin orchestration
+- `reels.js`: reel construction, positioning, and animation
+- `payouts.js`: line evaluation and payout calculation
+- `ui.js`: DOM references, display updates, help modal, and win highlighting
+- `effects.js`: coin particles and screen flashes
+- `audio.js`: synthesized game sounds
+- `bonuses.js`: extension hooks for free spins, modifiers, and bonus rounds
+- `persistence.js`: browser-local balance and settings
+- `statistics.js`: session-statistics tracking and future analytics hooks
 
 ## Included features
 
@@ -26,9 +67,9 @@ Then visit `http://localhost:8080`.
 - Sequential reel stopping, bounce, paylines, win highlights, particles, and synthesized sound
 - Browser-local saved balance and settings
 - Responsive desktop and mobile layout
-- No dependencies and no external services
+- No dependencies or external services
 
-## Replace the placeholder art
+## Replace the symbol art
 
 The game loads these files:
 
@@ -41,16 +82,16 @@ The game loads these files:
 - `assets/symbols/ashley.svg`
 - `assets/symbols/tree-of-life.svg`
 
-You have two easy options:
+You have two options:
 
-1. Export your finished art using the exact same filenames and overwrite the placeholder files.
-2. Export PNGs and update the image paths in the `CONFIG.symbols` section near the bottom of `index.html`.
+1. Export finished art using the exact same filenames and overwrite the placeholder files.
+2. Export PNGs and update the image paths in `js/config.js`.
 
-Recommended source art: square 512 x 512 or 1024 x 1024 transparent PNGs. The page scales them automatically. You do not need to manually assemble long reel-strip sheets because the webpage builds the vertical strips from the individual symbol files.
+Recommended source art is a square 512 x 512 or 1024 x 1024 transparent PNG. The page scales each image automatically and constructs the vertical reel strips from individual symbol files.
 
 ## Current reel maps
 
-The exact 24-stop maps are in the `CONFIG.reels` array in `index.html`. Symbol abbreviations:
+The exact 24-stop maps are in `CONFIG.reels` inside `js/config.js`. Symbol abbreviations:
 
 - STR: Sterling
 - CYD: Cydney
@@ -78,4 +119,4 @@ Because all five paylines are active, total spin cost is `line bet x 5`. With th
 
 ## Reset saved data
 
-Use the in-game **Refill** button to restore 1,000 coins. To erase all browser-local settings, remove the `commune-fortune-v1` item from localStorage in your browser developer tools.
+Use the in-game **Refill** button to restore 1,000 coins. To erase all browser-local settings, remove the `commune-fortune-v1` item from localStorage in browser developer tools.
