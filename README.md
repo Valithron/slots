@@ -9,7 +9,7 @@ Commune Fortune is a private, static 3-by-3 slot-style game built with plain HTM
 - Reload-safe, exactly-once settlement
 - Better Spin Drama and manual left-to-right reel stopping
 - Auto, Full, and Reduced visual-effects modes
-- Mobile-tuned reel-stop and anticipation feedback
+- WebKit-safe mobile reel-stop and anticipation feedback
 - Small, Nice, Big, and Commune Jackpot win tiers
 - Tree of Life Wild and Tree Awakening
 - Any-order named Commune Line combinations and Full Commune
@@ -30,8 +30,8 @@ Reduced
 ```
 
 - **Auto** follows the device or browser `prefers-reduced-motion` setting.
-- **Full** keeps the complete tactile presentation even when the system requests reduced motion.
-- **Reduced** removes cabinet shake and repeated pulsing while retaining a short reel flash, brightness pop, and tiny localized impact.
+- **Full** uses the complete presentation allowed for the current device class.
+- **Reduced** removes repeated pulsing and uses the shortest visible feedback.
 
 The preference is saved in browser state as:
 
@@ -40,6 +40,20 @@ visualEffectsMode: "auto" // "auto" | "full" | "reduced"
 ```
 
 All reduced-motion decisions route through `app.effects.getMotionMode(state)` and `app.effects.isReducedMotionActive(state)`. Mobile tuning activates at 768 pixels or narrower or when a coarse pointer is reported. It changes presentation intensity only and has **0.0000% RTP effect**.
+
+### Mobile WebKit stability
+
+On iPhone Safari, iPhone Chrome, and many application browsers, the engine is WebKit. Transforming or filtering the clipped reel viewport, reel frame, or entire cabinet while the long reel strip is independently transform-animated can cause blank reels and severe clipping.
+
+Mobile tactile feedback therefore keeps reel geometry stationary:
+
+- no mobile reel-viewport bump transform
+- no mobile frame filter animation
+- no mobile cabinet movement
+- stop feedback uses a short overlay flash
+- final-reel anticipation uses an overlay glow
+
+Desktop retains the existing localized movement where it is stable.
 
 ## Commune Line combinations
 
@@ -120,35 +134,39 @@ At line bet 1 and total bet 5, the production simulator enumerates all 55,296 we
 | Household | 0.1736% | 1.1574% |
 | Full Commune | 0.1157% | 0.1157% |
 
-The new 2.7980% combination contribution is inside the locked 2.5% to 3.1% target.
+See `docs/math-model.md` for the exact contribution table and transition details.
 
 ## Commands
 
 ```bash
 npm test
-npm run test:features
-npm run test:presentation
-npm run test:polish
 npm run simulate
 npm run simulate:without-free-spins
 npm run simulate:with-free-spins
-node tools/simulate-polish.mjs --check
-node tools/simulate-polish.mjs --json
+node tools/simulate.mjs --check
+node tools/simulate.mjs --json
 ```
 
-The simulator reports the previous and current combination models, named and Full Commune contributions, total RTP, RTP delta, and every combination trigger frequency.
+## Feature flags
 
-## Feature flags and isolation
+Character reactions and free spins remain independent feature flags:
 
-The existing feature flags remain independent. Manual stop timing, reactions, audio, and visual effects consume authoritative results but do not participate in result generation.
+```js
+CONFIG.features.characterReactions
+CONFIG.features.freeSpins
+```
 
-Automated tests preserve base math, Tree Awakening, Fortune, free spins, manual stopping, win tiers, exactly-once settlement, reload recovery, and feature-flag isolation.
+Visual-effects mode is a presentation preference rather than a feature flag and cannot change results, payouts, settlement, or RTP.
+
+## Accessibility
+
+Auto respects the operating-system reduced-motion preference. Reduced mode removes repeated movement and cabinet motion while keeping brief visible impact signaling, clear text labels, keyboard Skip, non-color labels, and meaningful announcements.
 
 ## Known limitations and deferred work
 
-- Alternate reaction portraits, frame animations, and video expressions remain deferred.
-- Ally Selection and all seven ally abilities remain deferred.
+- Alternate reaction portraits, frame animations, and video expressions are deferred.
+- Ally Selection and all seven ally abilities are deferred.
 - No Scatter symbol is used. The existing Tree performs both Wild and trigger roles.
-- Mystery modifiers, risk-or-collect, daily rewards, and secret events remain deferred.
+- Mystery modifiers, risk-or-collect, daily rewards, and secret events are deferred.
 - Audio is synthesized. No imported audio is included.
-- Persistence remains local to the current browser.
+- The project remains local-browser persistence only.
