@@ -6,21 +6,50 @@
   const REACTION_MS = 650;
   const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
   const active = new Map();
+  const previewCache = new Map();
   let capturedUI = null;
   let capturedReels = null;
   let previewTimer = null;
   let pendingCombinationWins = [];
 
+  const originalResolveReactionAsset = app.reactions.resolveReactionAsset;
   const normalizeTier = tier => tier === "jackpot" || tier === "big" ? "big" : tier === "combination" || tier === "nice" ? "nice" : tier === "small" ? "small" : "base";
-  const baseAsset = symbolKey => app.reactions.resolveReactionAsset(symbolKey, "base");
   function fallbackLevels(tier) {
     const level = normalizeTier(tier);
     return level === "big" ? ["big", "nice", "small", "base"] : level === "nice" ? ["nice", "small", "base"] : level === "small" ? ["small", "base"] : ["base"];
   }
+  function stripVersion(path) {
+    return typeof path === "string" ? path.split("?")[0].split("#")[0] : path;
+  }
+  function variantPath(basePath, level) {
+    const clean = stripVersion(basePath);
+    if (!clean || level === "base" || !/\.svg$/i.test(clean)) return clean;
+    return clean.replace(/\.svg$/i, `-${level}.svg`);
+  }
+  function resolveConventionAsset(characterKey, requestedLevel = "base") {
+    const base = originalResolveReactionAsset(characterKey, "base");
+    if (!base?.path || characterKey === "TOL") return originalResolveReactionAsset(characterKey, requestedLevel);
+    const paths = fallbackLevels(requestedLevel).map(level => app.reactions.versionAssetUrl(variantPath(base.path, level)));
+    return {
+      characterKey,
+      requestedLevel,
+      source: requestedLevel,
+      path: paths[0],
+      fallbackPath: paths[1] || base.path,
+      genericPath: paths[2] || paths[1] || base.path,
+      fallbackPaths: paths,
+    };
+  }
+  app.reactions.resolveReactionAsset = resolveConventionAsset;
+
+  const baseAsset = symbolKey => originalResolveReactionAsset(symbolKey, "base");
   function resolveVariantChain(symbolKey, tier) {
     if (!symbolKey || symbolKey === "TOL") return [baseAsset("TOL")];
     const seen = new Set();
-    return fallbackLevels(tier).map(level => app.reactions.resolveReactionAsset(symbolKey, level)).filter(asset => {
+    return fallbackLevels(tier).map(level => {
+      const base = baseAsset(symbolKey);
+      return { ...base, requestedLevel: level, path: app.reactions.versionAssetUrl(variantPath(base.path, level)) };
+    }).filter(asset => {
       if (!asset?.path || seen.has(asset.path)) return false;
       seen.add(asset.path);
       return true;
@@ -116,6 +145,32 @@
       return { symbolKey: "TOL", rows };
     });
   }
+  function visibleCharacterParticipates(result, characterKey) {
+    return (result.lineWins || []).some(win => win.symbolKey === characterKey && (win.rows || []).some((row, reel) => result.originalMatrix?.[row]?.[reel] === characterKey));
+  }
+  function visibleCharacterInCombination(result, characterKey) {
+    return (result.combinationWins || []).some(win => (win.cells || []).some(({ row, reel }) => result.originalMatrix?.[row]?.[reel] === characterKey));
+  }
+  function findCharacterPreviewResult(tier, characterKey, state, referenceBet, totalAwardedSpins) {
+    const key = [tier, characterKey, state?.lineBetIndex || 0, referenceBet, totalAwardedSpins].join(":");
+    if (previewCache.has(key)) return structuredClone(previewCache.get(key));
+    const combination = tier === "combination";
+    const featureRolls = { expandingWild: { roll: 1 } };
+    for (let first = 0; first < CONFIG.reels[0].length; first += 1) {
+      for (let second = 0; second < CONFIG.reels[1].length; second += 1) {
+        for (let third = 0; third < CONFIG.reels[2].length; third += 1) {
+          const targetStops = [first, second, third];
+          const result = app.payouts.createSpinResult({ targetStops, featureRolls, state, id: `qa-character-probe-${tier}-${characterKey}-${first}-${second}-${third}`, spinType: "free", referenceBet, totalAwardedSpins, allyBypass: true, createdAt: "2000-01-01T00:00:00.000Z" });
+          const matches = combination ? visibleCharacterInCombination(result, characterKey) : visibleCharacterParticipates(result, characterKey);
+          if (!matches) continue;
+          const match = { targetStops, featureRolls, result };
+          previewCache.set(key, structuredClone(match));
+          return match;
+        }
+      }
+    }
+    throw new Error(`No valid stopped-reel ${combination ? "combination" : "line win"} contains ${CONFIG.characterPresentation.characters[characterKey]?.name || characterKey}.`);
+  }
   function patchFactories() {
     const baseCreateUI = app.ui.createUI;
     app.ui.createUI = function createUIWithReelReactions(...args) {
@@ -154,27 +209,31 @@
       return capturedReels;
     };
   }
-  async function preview(tier, characterKey = "sterling") {
+  async function preview(tier, characterKey = "STR") {
     if (!app.qa?.enabled || !capturedUI || !capturedReels || !app.game) return { ok: false, message: "The game is still initializing." };
+    if (!CONFIG.characterPresentation.allMembers.includes(characterKey)) throw new Error("Choose a valid Commune member.");
     const before = JSON.stringify(app.game.getState());
     stopAll();
     const state = app.game.getState();
-    const scenarioId = tier === "combination" ? "combination" : tier === "jackpot" ? "big-win" : `${tier}-win`;
-    const scenario = app.qa.findScenario(scenarioId, { state, spinType: "free", referenceBet: app.payouts.getTotalBet(state), totalAwardedSpins: state.freeSpinSession?.totalAwardedSpins || 4 });
-    const result = app.payouts.createSpinResult({ targetStops: scenario.targetStops, featureRolls: scenario.featureRolls, state, id: `qa-reel-reaction-${tier}`, spinType: "free", referenceBet: app.payouts.getTotalBet(state), totalAwardedSpins: state.freeSpinSession?.totalAwardedSpins || 4, allyBypass: true });
+    const referenceBet = app.payouts.getTotalBet(state);
+    const totalAwardedSpins = state.freeSpinSession?.totalAwardedSpins || 4;
+    const match = findCharacterPreviewResult(tier, characterKey, state, referenceBet, totalAwardedSpins);
+    const result = match.result || app.payouts.createSpinResult({ targetStops: match.targetStops, featureRolls: match.featureRolls, state, id: `qa-reel-reaction-${tier}-${characterKey}`, spinType: "free", referenceBet, totalAwardedSpins, allyBypass: true });
     await capturedReels.spinTo(result.targetStops, { anticipation: "none", reducedMotion: true, dramaEnabled: false, manualStopsEnabled: false });
     const forcedTier = tier === "jackpot" ? "jackpot" : tier === "combination" ? "nice" : tier;
     capturedUI.clearWins();
     if (tier === "combination" && result.combinationWins[0]) capturedUI.markCombination(result.combinationWins[0], result, capturedReels);
     capturedUI.markWins(result.lineWins, capturedReels, forcedTier, { reaction: true });
-    const reaction = app.reactions.selectReaction({ ...result, winTier: forcedTier, finalWinTier: forcedTier }, { enabled: true });
+    const forcedResult = { ...result, winTier: forcedTier, finalWinTier: forcedTier };
+    const reaction = app.reactions.selectReaction(forcedResult, { enabled: true });
     const model = app.reactions.createReactionPresentationModel(reaction);
     if (model && tier !== "small") {
       capturedUI.showReaction(model, { tier: tier === "combination" ? "combination" : forcedTier });
       previewTimer = globalThis.setTimeout(() => capturedUI.hideReaction(), 1800);
     }
     if (JSON.stringify(app.game.getState()) !== before) throw new Error("QA reel preview changed persistent game state.");
-    return { ok: true, message: `${tier === "combination" ? "Commune Combination" : `${tier[0].toUpperCase()}${tier.slice(1)} Win`} reel reaction running for ${characterKey}.` };
+    const name = CONFIG.characterPresentation.characters[characterKey]?.name || characterKey;
+    return { ok: true, message: `${tier === "combination" ? "Commune Combination" : `${tier[0].toUpperCase()}${tier.slice(1)} Win`} reel reaction running on participating ${name} cells.` };
   }
   function mountQA() {
     if (!app.qa?.enabled) return;
@@ -184,26 +243,34 @@
     section.className = "qa-reaction-preview";
     section.dataset.reelReactionPreview = "true";
     section.innerHTML = `<div class="qa-heading"><strong>Reel Reaction Preview</strong><span>No payout or saved progress</span></div>
-      <label class="qa-field">Character<select data-reaction-character>${CONFIG.characterPresentation.allMembers.map(id => `<option value="${id}"${id === "sterling" ? " selected" : ""}>${CONFIG.characterPresentation.characters[id]?.name || id}</option>`).join("")}</select></label>
+      <label class="qa-field">Character<select data-reaction-character>${CONFIG.characterPresentation.allMembers.map(id => `<option value="${id}"${id === "STR" ? " selected" : ""}>${CONFIG.characterPresentation.characters[id]?.name || id}</option>`).join("")}</select></label>
       <div class="qa-row qa-row-split"><button type="button" data-reaction-tier="small">Small Win</button><button type="button" data-reaction-tier="nice">Nice Win</button></div>
       <div class="qa-row qa-row-split"><button type="button" data-reaction-tier="big">Big Win</button><button type="button" data-reaction-tier="jackpot">Jackpot</button></div>
       <button type="button" data-reaction-tier="combination">Commune Combination</button>
       <button class="qa-danger" type="button" data-reaction-clear>Clear Reel Reactions</button>`;
     body.insertBefore(section, body.querySelector(".qa-status"));
+    const status = body.querySelector("[data-qa-status]");
     section.addEventListener("click", async event => {
       const tier = event.target.closest("button[data-reaction-tier]")?.dataset.reactionTier;
       if (event.target.closest("button[data-reaction-clear]")) {
         pendingCombinationWins = [];
         stopAll();
         capturedUI?.hideReaction?.();
+        if (status) status.textContent = "Reel reactions cleared.";
         return;
       }
       if (!tier) return;
-      const character = section.querySelector("[data-reaction-character]")?.value || "sterling";
-      try { await preview(tier, character); } catch (error) { console.error(error); }
+      const character = section.querySelector("[data-reaction-character]")?.value || "STR";
+      try {
+        const outcome = await preview(tier, character);
+        if (status) status.textContent = outcome.message;
+      } catch (error) {
+        console.error(error);
+        if (status) status.textContent = error.message;
+      }
     });
   }
   patchFactories();
-  app.reelReactions = { BASE_MS, REACTION_MS, normalizeTier, fallbackLevels, resolveVariantChain, participatingCells, combinationWins, start, stopAll, activeCount, preview };
+  app.reelReactions = { BASE_MS, REACTION_MS, normalizeTier, fallbackLevels, variantPath, resolveVariantChain, participatingCells, combinationWins, visibleCharacterParticipates, visibleCharacterInCombination, findCharacterPreviewResult, start, stopAll, activeCount, preview };
   if (app.qa?.enabled) globalThis.setTimeout(mountQA, 0);
 })();
