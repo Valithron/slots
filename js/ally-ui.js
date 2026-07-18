@@ -50,6 +50,8 @@
 
     function showAllySelection(session) {
       if (!elements.allySelectionLayer || !elements.allySelectionGrid) return;
+      const wasVisible = elements.allySelectionLayer.classList.contains("is-visible");
+      const activeAllyId = document.activeElement?.dataset?.allyId || null;
       const ally = app.allies.normalizeAllyState(session?.ally);
       elements.allySelectionGrid.innerHTML = CONFIG.allyOrder.map(id => {
         const definition = CONFIG.allies[id];
@@ -76,6 +78,14 @@
       elements.allySelectionAnnouncer.textContent = ally.selectedId
         ? `${CONFIG.allies[ally.selectedId].name} selected. Press Choose ${CONFIG.allies[ally.selectedId].name} to confirm.`
         : "Choose your ally for Commune Free Spins.";
+      requestAnimationFrame(() => {
+        const preferredId = activeAllyId || ally.selectedId;
+        const preferred = preferredId
+          ? elements.allySelectionGrid.querySelector(`[data-ally-id="${preferredId}"]`)
+          : null;
+        if (preferred) preferred.focus();
+        else if (!wasVisible) elements.allySelectionGrid.querySelector(".ally-card")?.focus();
+      });
     }
 
     function hideAllySelection() {
@@ -89,9 +99,12 @@
       if (allyId === "sterling") return activation?.endBonus
         ? `Insurance pays +${activation.bonus || 0} coins.`
         : "A loss added to the Insurance Pot.";
-      if (allyId === "ryan") return activation?.baseWin > 0
-        ? `Big Win multiplies ${activation.baseWin} to ${activation.baseWin + activation.bonus}.`
-        : "The Big Win Spin landed no payout.";
+      if (allyId === "ryan") {
+        if (activation?.preSpin) return "This is the Big Win Spin. Any win pays 2×.";
+        return activation?.baseWin > 0
+          ? `Big Win multiplies ${activation.baseWin} to ${activation.baseWin + activation.bonus}.`
+          : "The Big Win Spin landed no payout.";
+      }
       if (allyId === "cooper") return `${activation.multiplier}× Rage adds +${activation.bonus || 0} coins.`;
       if (allyId === "cydney") return activation?.endBonus
         ? `The Echo pays +${activation.bonus || 0} coins.`
