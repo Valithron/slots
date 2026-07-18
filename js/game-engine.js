@@ -21,7 +21,7 @@
     onReelStop: (index, options) => app.effects.reelImpact(ui.elements.machine, ui.elements.reelFrame, index, options),
     onAnticipation: (level, active) => {
       ui.setAnticipation(level, active);
-      app.effects.setAnticipation(ui.elements.machine, reels.getReelElements(), level, active);
+      app.effects.setAnticipation(level, active);
       if (active) audio.playAnticipation(level);
     },
     onManualStopStateChange: value => { manualStops = value; render(); },
@@ -38,6 +38,7 @@
       state, phase, lineBet: lineBet(), totalBet: totalBet(), manualStopState: manualStops,
       fortuneSpinActive: Boolean(currentResult?.fortuneSpin?.active && phase !== GAME_STATES.IDLE),
     });
+    app.qa?.updateSnapshot?.({ state, phase });
   }
   function setMessage(result) {
     if (!result.totalWin) return ui.showMessage(result.spinType === "free" ? "No win on this free spin." : "No line this time.");
@@ -107,6 +108,25 @@
     ui.updateReactionAmount(result.totalWin);
   }
   function settle() { return app.payouts.settlePendingSpinState(state); }
+  function createResult({ spinType, spinState, referenceBet, totalAwardedSpins = 0 }) {
+    const override = app.qa?.consumeSpinOverride?.({
+      spinType,
+      state: spinState,
+      referenceBet,
+      totalAwardedSpins,
+    });
+    const result = app.payouts.createSpinResult({
+      targetStops: override?.targetStops || reels.randomStops(),
+      featureRolls: override?.featureRolls,
+      state: spinState,
+      id: id(spinType === "paid" ? "spin" : "free"),
+      spinType,
+      referenceBet,
+      totalAwardedSpins,
+    });
+    app.qa?.recordResolvedResult?.(result, override);
+    return result;
+  }
   async function spinAnimation(result, { manualStopsEnabled = CONFIG.features.manualStops } = {}) {
     ui.setSpinning(true); audio.playSpinStart();
     await reels.spinTo(result.targetStops, {
@@ -155,7 +175,7 @@
     setPhase(GAME_STATES.SPINNING); ui.clearWins(); ui.clearFeaturePresentation(); ui.showMessage("The reels are turning…");
     try {
       await app.bonuses.beforeSpin({ state, totalBet: cost });
-      const result = app.payouts.createSpinResult({ targetStops: reels.randomStops(), state, id: id("spin"), spinType: "paid" });
+      const result = createResult({ spinType: "paid", spinState: state, referenceBet: cost });
       app.payouts.consumeFortuneChargeState(state, result); state.coins -= result.coinCost; state.lastWin = 0; state.pendingSpin = result; currentResult = result; save(); render();
       await spinAnimation(result); setPhase(GAME_STATES.RESOLVING);
       const before = app.payouts.normalizeFortuneMeter(state.fortuneMeter); const done = settle();
@@ -212,8 +232,12 @@
             else { state.freeSpinSession = app.freeSpins.markFreeSpinPresented(session, session.lastSettledFreeSpinId); save(); }
           } else if (session.status === FS.COMPLETE || session.remainingSpins <= 0) { await showSummary(); break; }
           else if (session.status === FS.READY) {
-            session.status = FS.SPINNING; setPhase(GAME_STATES.FREE_SPINS); ui.clearWins(); ui.clearFeaturePresentation();
-            const result = app.payouts.createSpinResult({ targetStops: reels.randomStops(), state: app.freeSpins.getLockedSpinState(session, state), id: id("free"), spinType: "free", referenceBet: session.referenceBet, totalAwardedSpins: session.totalAwardedSpins });
+            await app.qa?.waitForFreeSpinStep?.({ session, state });
+            if (!activeSession() || state.freeSpinSession.status !== FS.READY) continue;
+            const currentSession = state.freeSpinSession;
+            currentSession.status = FS.SPINNING; setPhase(GAME_STATES.FREE_SPINS); ui.clearWins(); ui.clearFeaturePresentation();
+            const lockedState = app.freeSpins.getLockedSpinState(currentSession, state);
+            const result = createResult({ spinType: "free", spinState: lockedState, referenceBet: currentSession.referenceBet, totalAwardedSpins: currentSession.totalAwardedSpins });
             state.pendingSpin = result; currentResult = result; save(); render(); await animateAuthoritativeFreeResult(result);
             const done = settle(); statistics.recordSpin({ wager: done.referenceBet, coinCost: 0, payout: done.totalWin, spinType: "free" }); save(); render();
             const activation = state.freeSpinSession?.ally?.lastActivation;
@@ -266,6 +290,86 @@
     state.lineBetIndex = Math.min(Math.max(state.lineBetIndex + delta, 0), CONFIG.lineBets.length - 1); state.lastWin = 0; save(); render(); audio.playButtonTone();
   }
   function refill() { if (phase !== GAME_STATES.IDLE || activeSession()) return; state.coins = CONFIG.startingCoins; state.lastWin = 0; save(); ui.clearWins(); render(); audio.playRefillSound(); }
+
+  function qaApplyAlly(allyId) {
+    if (!activeSession() || state.freeSpinSession.status !== FS.INTRO) return { ok: false, message: "Trigger Free Spins before applying an ally." };
+    if (state.freeSpinSession.ally?.confirmed) return { ok: false, message: "This ally is already locked. Reset the feature to choose another." };
+    if (!CONFIG.allies?.[allyId]) return { ok: false, message: "Choose a valid ally." };
+    selectAlly(allyId);
+    confirmAlly();
+    return { ok: true, message: `${CONFIG.allies[allyId].name} selected and confirmed.` };
+  }
+  function qaTriggerFeature() {
+    if (phase !== GAME_STATES.IDLE || activeSession()) return { ok: false, message: "Reset or finish the current feature first." };
+    const cost = app.payouts.getTotalBet(state);
+    if (state.coins < cost) state.coins = cost;
+    app.qa.queueScenario("paid", "three-trees");
+    save(); render(); void paidSpin();
+    return { ok: true, message: "Three Trees queued through the real paid-spin path." };
+  }
+  function qaAddCoins() {
+    state.coins += 10000; save(); render();
+    return { ok: true, message: "Added 10,000 test coins." };
+  }
+  function qaSetOneSpinRemaining() {
+    const session = state.freeSpinSession;
+    if (!session?.active || ![FS.INTRO, FS.READY].includes(session.status)) return { ok: false, message: "Pause at the ally intro or between Free Spins first." };
+    session.remainingSpins = 1;
+    session.totalAwardedSpins = session.completedSpins + 1;
+    if (session.completedSpins === 0) session.startingSpins = 1;
+    save(); render();
+    return { ok: true, message: "The active feature now has one Free Spin remaining." };
+  }
+  function qaForceAbility() {
+    const session = state.freeSpinSession;
+    const ally = session?.ally;
+    const allyId = ally?.selectedId;
+    if (!session?.active || !ally?.confirmed || !allyId) return { ok: false, message: "Select and confirm an ally first." };
+    if (![FS.INTRO, FS.READY].includes(session.status)) return { ok: false, message: "Force abilities only at the intro or between Free Spins." };
+    let scenario = "small-win";
+    if (allyId === "sterling") scenario = "loss";
+    else if (allyId === "ryan") {
+      const nextSpin = session.completedSpins + 1;
+      if (nextSpin > CONFIG.allies.ryan.parameters.selectedInitialSpinCount) return { ok: false, message: "Ryan must be tested within the first four Free Spins. Reset the feature." };
+      ally.ryan.selectedSpinNumber = nextSpin;
+      ally.ryan.consumed = false;
+      ally.ryan.basePayout = 0;
+      ally.ryan.bonus = 0;
+    } else if (allyId === "cooper") {
+      ally.cooper.consecutiveLosses = 3;
+      ally.cooper.currentMultiplier = app.allies.getCooperMultiplier(3, CONFIG.allies.cooper);
+      ally.cooper.maximumRage = Math.max(ally.cooper.maximumRage, ally.cooper.currentMultiplier);
+    } else if (allyId === "cydney") {
+      ally.cydney.recordedSpinId = null;
+      ally.cydney.recordedAmount = 0;
+      ally.cydney.echoBonus = 0;
+      ally.cydney.paid = false;
+      ally.endBonusPaid = false;
+    } else if (allyId === "gabi") {
+      scenario = "weak-win";
+      ally.gabi.used = false;
+      ally.gabi.originalResult = null;
+      ally.gabi.replacementResult = null;
+      ally.gabi.selectedResultId = null;
+      ally.gabi.netImprovement = 0;
+    } else if (allyId === "ashley") {
+      scenario = "loss";
+      ally.ashley.used = false;
+      ally.ashley.originalSpinId = null;
+      ally.ashley.replayResult = null;
+      ally.ashley.improvement = 0;
+    }
+    app.qa.queueScenario("free", scenario);
+    save(); render(); app.qa.releaseNextStep();
+    return { ok: true, message: `${CONFIG.allies[allyId].abilityName} prepared for the next Free Spin.` };
+  }
+  function qaResetFeature() {
+    app.qa.cancelWait(); aborter?.abort(); clearPresentation();
+    state.pendingSpin = null; state.freeSpinSession = null; state.lastWin = 0; currentResult = null; manualStops = null;
+    setPhase(GAME_STATES.IDLE, true);
+    globalThis.location.reload();
+    return { ok: true, message: "Feature state cleared." };
+  }
   function bind() {
     ui.elements.betDown.addEventListener("click", () => bet(-1)); ui.elements.betUp.addEventListener("click", () => bet(1));
     ui.elements.spinButton.addEventListener("click", primary); ui.elements.refillButton.addEventListener("click", refill);
@@ -273,6 +377,14 @@
     ui.elements.helpButton.addEventListener("click", ui.openHelp); ui.elements.closeHelp.addEventListener("click", ui.closeHelp);
     ui.elements.helpModal.addEventListener("click", event => { if (event.target === ui.elements.helpModal) ui.closeHelp(); });
     ui.bindAllySelection?.({ onSelect: selectAlly, onConfirm: confirmAlly });
+    app.qa?.bindGameControls?.({
+      triggerFeature: qaTriggerFeature,
+      applyAlly: qaApplyAlly,
+      addCoins: qaAddCoins,
+      setOneSpinRemaining: qaSetOneSpinRemaining,
+      forceAbility: qaForceAbility,
+      resetFeature: qaResetFeature,
+    });
     document.addEventListener("keydown", event => {
       if (ui.isHelpOpen()) { if (event.key === "Escape") ui.closeHelp(); return; }
       const interactive = event.target?.closest?.("button, input, select, textarea, a[href]");
