@@ -40,10 +40,15 @@
     return originalResolveReactionAsset(symbolKey, "base");
   }
 
+  function configuredVariantPath(characterKey, level, basePath) {
+    const configured = CONFIG.characterPresentation.characters[characterKey]?.[level];
+    return typeof configured === "string" && configured.trim() ? configured : variantPath(basePath, level);
+  }
+
   function resolveConventionAsset(characterKey, requestedLevel = "base") {
     const base = baseAsset(characterKey);
     if (!base?.path || characterKey === "TOL") return originalResolveReactionAsset(characterKey, requestedLevel);
-    const paths = fallbackLevels(requestedLevel).map(level => app.reactions.versionAssetUrl(variantPath(base.path, level)));
+    const paths = fallbackLevels(requestedLevel).map(level => app.reactions.versionAssetUrl(configuredVariantPath(characterKey, level, base.path)));
     return {
       characterKey,
       requestedLevel,
@@ -62,7 +67,7 @@
     const seen = new Set();
     return fallbackLevels(tier).map(level => {
       const base = baseAsset(symbolKey);
-      return { ...base, requestedLevel: level, path: app.reactions.versionAssetUrl(variantPath(base.path, level)) };
+      return { ...base, requestedLevel: level, path: app.reactions.versionAssetUrl(configuredVariantPath(symbolKey, level, base.path)) };
     }).filter(asset => {
       if (!asset?.path || seen.has(asset.path)) return false;
       seen.add(asset.path);
@@ -162,10 +167,10 @@
   }
 
   function combinationWins(combinationWin) {
-    return (combinationWin?.cells || []).map(({ row, reel }) => {
+    return (combinationWin?.cells || []).map(({ row, reel }, index) => {
       const rows = Array(CONFIG.reels.length);
       rows[reel] = row;
-      return { symbolKey: "TOL", rows };
+      return { symbolKey: combinationWin?.symbols?.[index] || null, rows };
     });
   }
 
@@ -226,7 +231,8 @@
       };
       ui.markWins = function markWinsWithReactions(wins, reelController, tier, options) {
         const result = baseMarkWins(wins, reelController, tier, options);
-        if (options?.reaction) start([...(wins || []), ...pendingCombinationWins], reelController, pendingCombinationWins.length ? "nice" : tier, { forceMotion: options.forceMotion === true });
+        const reactionTier = pendingCombinationWins.length ? "small" : tier;
+        if (options?.reaction) start([...(wins || []), ...pendingCombinationWins], reelController, reactionTier, { forceMotion: options.forceMotion === true });
         pendingCombinationWins = [];
         return result;
       };
@@ -263,7 +269,7 @@
     await capturedReels.spinTo([0, 0, 0], { anticipation: "none", reducedMotion: true, dramaEnabled: false, manualStopsEnabled: false });
 
     const wins = previewWins(tier, characterKey);
-    const forcedTier = tier === "jackpot" ? "jackpot" : tier === "combination" ? "nice" : tier;
+    const forcedTier = tier === "jackpot" ? "jackpot" : tier === "combination" ? "small" : tier;
     capturedUI.markWins(wins, capturedReels, forcedTier, { reaction: true, forceMotion: true });
 
     const name = CONFIG.characterPresentation.characters[characterKey]?.name || characterKey;
@@ -327,6 +333,6 @@
   }
 
   patchFactories();
-  app.reelReactions = { BASE_MS, REACTION_MS, normalizeTier, fallbackLevels, variantPath, resolveVariantChain, participatingCells, combinationWins, start, stopAll, activeCount: () => active.size, preview, previewWins, PREVIEW_ROWS };
+  app.reelReactions = { BASE_MS, REACTION_MS, normalizeTier, fallbackLevels, variantPath, configuredVariantPath, resolveVariantChain, participatingCells, combinationWins, start, stopAll, activeCount: () => active.size, preview, previewWins, PREVIEW_ROWS };
   if (app.qa?.enabled) globalThis.setTimeout(mountQA, 0);
 })();
