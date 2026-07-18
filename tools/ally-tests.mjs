@@ -178,5 +178,7 @@ assert.ok(!/\.machine[^}]*transform\s*:/s.test(css),"ally CSS must not move cabi
 assert.ok(engine.includes("state.pendingSpin = result; currentResult = result; save(); render(); await animateAuthoritativeFreeResult(result)"),"authoritative result must save before replay animation");
 assert.ok(engine.includes("app.allies.confirmSelection"));
 assert.ok(engine.includes("app.allies.beginFeature"));
+assert.ok(engine.includes('event.target?.closest?.("button, input, select, textarea, a[href]")'), "native keyboard controls must not be intercepted");
+assert.ok(engine.includes("preSpin: true"), "Ryan reveal must not expose the predetermined payout");
 
 console.log("Choose Your Ally deterministic tests: PASS (selection, seven abilities, replay coherence, persistence, recovery contracts, and mobile-safe source guards)");
