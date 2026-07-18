@@ -3,15 +3,18 @@ import assert from "node:assert/strict";
 const store = new Map();
 globalThis.localStorage = { getItem:k=>store.get(k)??null, setItem:(k,v)=>store.set(k,String(v)), removeItem:k=>store.delete(k), clear:()=>store.clear() };
 await import("../js/config.js");
+await import("../js/combination-clarity-config.js");
 await import("../js/reactions.js");
 await import("../js/free-spins.js");
 await import("../js/payouts.js");
+await import("../js/combination-clarity-payouts.js");
 await import("../js/game-flow.js");
 await import("../js/persistence.js");
+await import("../js/visual-effects-settings.js");
 await import("../js/statistics.js");
 const app=globalThis.CommuneFortune;
 const {CONFIG,payouts,reactions,freeSpins,persistence,statistics}=app;
-const state=(o={})=>({coins:1000,lineBetIndex:0,fortuneMeter:{value:0,charged:false},freeSpinSession:null,pendingSpin:null,lastWin:0,...o});
+const state=(o={})=>({coins:1000,lineBetIndex:0,fortuneMeter:{value:0,charged:false},freeSpinSession:null,pendingSpin:null,lastWin:0,visualEffectsMode:"auto",...o});
 const flags=o=>({...CONFIG.features,...o});
 const make=(stops,o={})=>payouts.createSpinResult({targetStops:stops,state:o.state||state(),id:o.id||"t",createdAt:"test",featureFlags:o.flags||flags({}),featureRolls:{expandingWild:{roll:o.roll??1}},spinType:o.spinType||"paid",referenceBet:o.referenceBet,totalAwardedSpins:o.totalAwardedSpins||0});
 function find(test){for(let a=0;a<24;a++)for(let b=0;b<24;b++)for(let c=0;c<24;c++)for(let roll=0;roll<4;roll++){const r=make([a,b,c],{roll});if(test(r))return {r,stops:[a,b,c],roll};}throw Error("no outcome");}
@@ -28,7 +31,7 @@ function reactionSelection(){
  const unique=reactions.selectReaction({totalWin:25,winTier:"nice",lineWins:[{symbolKey:"STR",payout:25}],combinationWins:[]});assert.deepEqual(unique.characterKeys,["STR"]);
  const tie=reactions.selectReaction({totalWin:20,winTier:"small",lineWins:[{symbolKey:"STR",payout:10},{symbolKey:"RYN",payout:10}],combinationWins:[]});assert.deepEqual(tie.characterKeys,["STR","RYN"]);
  const tree=reactions.selectReaction({totalWin:60,winTier:"big",lineWins:[{symbolKey:"TOL",payout:60}],combinationWins:[]});assert.equal(tree.type,"tree");
- CONFIG.combinations.definitions.forEach(d=>{const r=reactions.selectReaction({totalWin:10,winTier:"small",lineWins:[],combinationWins:[{...d,symbols:d.sequence}]});assert.deepEqual(r.characterKeys,CONFIG.characterPresentation.combinationMembers[d.id]);});
+ CONFIG.combinations.definitions.forEach(d=>{const r=reactions.selectReaction({totalWin:10,winTier:"small",lineWins:[],combinationWins:[{...d,symbols:d.members}]});assert.deepEqual(r.characterKeys,CONFIG.characterPresentation.combinationMembers[d.id]);});
  const full=reactions.selectReaction({totalWin:25,winTier:"nice",lineWins:[],combinationWins:[{id:"full-commune",name:"Full Commune",symbols:[...CONFIG.characterPresentation.allMembers,"TOL"]}]});assert.deepEqual(full.characterKeys,CONFIG.characterPresentation.allMembers);
  const jackpot=reactions.selectReaction({totalWin:200,winTier:"jackpot",lineWins:[{symbolKey:"STR",payout:200}],combinationWins:[]});assert.equal(jackpot.includesTree,true);assert.equal(jackpot.characterKeys.length,7);
  const compact=reactions.selectReaction({totalWin:30,winTier:"nice",lineWins:[{symbolKey:"CYD",payout:30}],combinationWins:[]},{compact:true,reducedMotion:true});assert.equal(compact.compact,true);assert.match(reactions.createReactionPresentationModel(compact).accessibleLabel,/Cydney/);

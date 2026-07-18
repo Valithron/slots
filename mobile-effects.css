@@ -1,0 +1,219 @@
+.visual-effects-setting {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  margin: 18px 0 20px;
+  padding: 14px 16px;
+  border: 1px solid rgba(151, 190, 229, .26);
+  border-radius: 14px;
+  background: rgba(7, 20, 38, .72);
+}
+
+.visual-effects-setting label {
+  display: grid;
+  gap: 3px;
+  color: #eef6ff;
+  font-weight: 800;
+}
+
+.visual-effects-setting small {
+  color: rgba(218, 232, 247, .68);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.visual-effects-setting select {
+  min-width: 112px;
+  padding: 9px 30px 9px 11px;
+  color: #f4f8ff;
+  border: 1px solid rgba(198, 223, 250, .38);
+  border-radius: 10px;
+  background: #102640;
+  font: inherit;
+  font-weight: 800;
+}
+
+.machine.motion-reduced:not(.tactile-mobile) .reel.is-stop-impact {
+  animation: reducedLocalizedImpact 150ms ease-out;
+}
+
+.machine.motion-reduced:not(.tactile-mobile) .reel.is-stop-impact .reel-stop-flash {
+  animation: reducedReelFlash 160ms ease-out;
+}
+
+.machine.motion-reduced .reel.is-anticipated::after,
+.machine.motion-reduced.anticipation-static .reel.is-anticipated::after {
+  animation: none;
+  box-shadow: inset 0 0 12px rgba(255, 226, 121, .2);
+  filter: brightness(1.04);
+}
+
+.reel-frame.motion-reduced:not(.tactile-mobile).impact-reel-1,
+.reel-frame.motion-reduced:not(.tactile-mobile).impact-reel-2,
+.reel-frame.motion-reduced:not(.tactile-mobile).impact-reel-3 {
+  animation: reducedFrameImpact 160ms ease-out;
+}
+
+.machine.tactile-mobile .reel.is-stop-impact,
+.mobile-stable-rendering .reel.is-stop-impact {
+  animation: none !important;
+  transform: none !important;
+  filter: none !important;
+}
+
+.machine.tactile-mobile .reel.is-stop-impact .reel-stop-flash,
+.mobile-stable-rendering .reel.is-stop-impact .reel-stop-flash {
+  animation: mobileSafeReelFlash 150ms linear;
+}
+
+.machine.tactile-mobile .reel.is-anticipated::after,
+.mobile-stable-rendering .reel.is-anticipated::after {
+  animation: none !important;
+  opacity: .78;
+  box-shadow: inset 0 0 16px rgba(255, 226, 121, .24);
+  filter: none !important;
+}
+
+.reel-frame.tactile-mobile.impact-reel-1,
+.reel-frame.tactile-mobile.impact-reel-2,
+.reel-frame.tactile-mobile.impact-reel-3,
+.mobile-stable-rendering .reel-frame.impact-reel-1,
+.mobile-stable-rendering .reel-frame.impact-reel-2,
+.mobile-stable-rendering .reel-frame.impact-reel-3 {
+  animation: none !important;
+  filter: none !important;
+}
+
+.machine.tactile-mobile.reel-impact,
+.machine.tactile-mobile.reel-impact-strong,
+.mobile-stable-rendering .machine.reel-impact,
+.mobile-stable-rendering .machine.reel-impact-strong {
+  animation: none !important;
+  transform: none !important;
+}
+
+@keyframes reducedLocalizedImpact {
+  0%, 100% { transform: translateY(0); filter: brightness(1); }
+  45% { transform: translateY(1px); filter: brightness(1.07); }
+}
+
+@keyframes reducedReelFlash {
+  0%, 100% { border-color: rgba(255, 244, 188, 0); box-shadow: inset 0 0 0 rgba(255, 235, 147, 0); }
+  38% { border-color: rgba(255, 244, 188, .72); box-shadow: inset 0 0 12px rgba(255, 235, 147, .28); }
+}
+
+@keyframes reducedFrameImpact {
+  0%, 100% { filter: brightness(1); }
+  45% { filter: brightness(1.06); }
+}
+
+@keyframes mobileSafeReelFlash {
+  0%, 100% { opacity: 0; border-color: rgba(255, 244, 188, 0); box-shadow: none; background: transparent; }
+  50% { opacity: .8; border-color: rgba(255, 248, 203, .86); box-shadow: inset 0 0 14px rgba(255, 235, 147, .32); background: rgba(255, 241, 180, .04); }
+}
+
+@media (max-width: 768px), (pointer: coarse) {
+  html { -webkit-text-size-adjust: 100%; }
+
+  .reel {
+    transform: none !important;
+    contain: layout paint;
+  }
+
+  .reel-strip {
+    will-change: auto !important;
+    backface-visibility: visible !important;
+    -webkit-backface-visibility: visible !important;
+  }
+
+  .machine.is-spinning .grid-shine { animation: none !important; opacity: .1; }
+  .stage::after { transition: none !important; }
+
+  .celebration-layer,
+  .combination-layer,
+  .fortune-result-layer,
+  .reaction-layer,
+  .free-spin-layer {
+    isolation: auto !important;
+    transform: none !important;
+    filter: none !important;
+  }
+
+  .celebration-layer::before {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: rgba(2, 7, 17, .82) !important;
+  }
+
+  .celebration-panel,
+  .combination-panel,
+  .fortune-result-panel,
+  .reaction-panel,
+  .free-spin-panel {
+    animation: none !important;
+    transform: none !important;
+    filter: none !important;
+    box-shadow: 0 14px 34px rgba(0,0,0,.58), inset 0 0 18px rgba(255,225,128,.05) !important;
+  }
+
+  .celebration-radiance,
+  .commune-confetti,
+  .coin-particle,
+  .screen-flash,
+  .combination-connector,
+  .grid-shine {
+    display: none !important;
+    animation: none !important;
+  }
+
+  .celebration-tree,
+  .tier-jackpot .celebration-tree,
+  .tier-jackpot .celebration-title,
+  .payline,
+  .symbol-cell img,
+  .wild-awakening-cell img,
+  .reaction-portrait,
+  .free-spin-portrait {
+    animation: none !important;
+    filter: none !important;
+  }
+
+  .symbol-cell.is-win::after,
+  .symbol-cell.is-combination::after,
+  .symbol-cell.is-awakening-source::after,
+  .combination-connector.is-visible {
+    animation: none !important;
+    filter: none !important;
+  }
+
+  .combination-panel,
+  .combination-layer.full-commune .combination-panel {
+    background: #071426 !important;
+    border-color: rgba(255,238,175,.72) !important;
+  }
+
+  .celebration-layer.tier-jackpot .celebration-panel,
+  .celebration-layer.tier-big .celebration-panel {
+    background: #071426 !important;
+    border-color: rgba(255,236,165,.72) !important;
+  }
+
+  .tier-jackpot .celebration-title,
+  .combination-layer.full-commune .combination-title {
+    background: none !important;
+    color: #fff1ac !important;
+    -webkit-text-fill-color: currentColor !important;
+  }
+
+  .modal-backdrop {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .visual-effects-setting { grid-template-columns: 1fr; }
+  .visual-effects-setting select { width: 100%; }
+}
