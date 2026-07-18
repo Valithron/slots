@@ -11,6 +11,11 @@ globalThis.matchMedia = () => ({ matches: false });
 globalThis.CommuneFortune = {};
 load("js/config.js");
 load("js/reactions.js");
+load("js/free-spins.js");
+load("js/allies.js");
+load("js/payouts.js");
+load("js/combination-clarity-payouts.js");
+load("js/ally-payouts.js");
 const app = globalThis.CommuneFortune;
 app.qa = { enabled: false };
 app.ui = { createUI: () => ({ markWins() {}, clearWins() {}, clearFeaturePresentation() {} }) };
@@ -25,17 +30,22 @@ assert.deepEqual(rr.fallbackLevels("nice"), ["nice", "small", "base"]);
 assert.deepEqual(rr.fallbackLevels("big"), ["big", "nice", "small", "base"]);
 assert.deepEqual(rr.fallbackLevels("jackpot"), ["big", "nice", "small", "base"]);
 
-const nice = rr.resolveVariantChain("sterling", "nice").map(asset => asset.path);
-const big = rr.resolveVariantChain("sterling", "big").map(asset => asset.path);
-const jackpot = rr.resolveVariantChain("sterling", "jackpot").map(asset => asset.path);
-const small = rr.resolveVariantChain("sterling", "small").map(asset => asset.path);
-assert.ok(nice.some(path => path.includes("sterling-nice.svg")), "Sterling Nice must resolve to sterling-nice.svg");
-assert.ok(big.some(path => path.includes("sterling-big.svg")), "Sterling Big must resolve to sterling-big.svg");
+const nice = rr.resolveVariantChain("STR", "nice").map(asset => asset.path);
+const big = rr.resolveVariantChain("STR", "big").map(asset => asset.path);
+const jackpot = rr.resolveVariantChain("STR", "jackpot").map(asset => asset.path);
+const small = rr.resolveVariantChain("STR", "small").map(asset => asset.path);
+assert.ok(nice[0].includes("sterling-nice.svg"), "Sterling Nice must request sterling-nice.svg");
+assert.ok(big[0].includes("sterling-big.svg"), "Sterling Big must request sterling-big.svg");
 assert.deepEqual(jackpot, big, "Jackpot must use the Big fallback chain");
-assert.equal(small.length, 1, "Missing Sterling Small must collapse safely to base");
-assert.ok(small[0].includes("sterling.svg"));
+assert.ok(small[0].includes("sterling-small.svg"), "Small must try the future Small asset first");
+assert.ok(small.at(-1).includes("sterling.svg"), "Missing Small must retain base as the final fallback");
 
-function fakeCell(stop, symbol = "sterling") {
+const popupNice = app.reactions.resolveReactionAsset("STR", "nice");
+const popupBig = app.reactions.resolveReactionAsset("STR", "big");
+assert.ok(popupNice.path.includes("sterling-nice.svg"), "Popup and reels must share convention-based Nice resolution");
+assert.ok(popupBig.path.includes("sterling-big.svg"), "Popup and reels must share convention-based Big resolution");
+
+function fakeCell(stop, symbol = "STR") {
   return {
     dataset: { stop: String(stop), symbol },
     querySelector: () => null,
@@ -50,15 +60,27 @@ const reelController = {
   getReelElements: () => strips.map(strip => ({ strip })),
 };
 const cells = rr.participatingCells([
-  { symbolKey: "sterling", rows: [0, 0, 0] },
-  { symbolKey: "sterling", rows: [0, 0, 0] },
+  { symbolKey: "STR", rows: [0, 0, 0] },
+  { symbolKey: "STR", rows: [0, 0, 0] },
 ], reelController);
 assert.equal(cells.length, 3, "Overlapping paylines must deduplicate each physical cell");
 assert.deepEqual(cells.map(cell => cell.reel), [0, 1, 2]);
 
+const state = { lineBetIndex: 0, coins: 1000, fortuneMeter: { value: 0, charged: false }, freeSpinSession: null };
+for (const characterKey of app.CONFIG.characterPresentation.allMembers) {
+  const lineMatch = rr.findCharacterPreviewResult("nice", characterKey, state, 5, 4);
+  assert.equal(rr.visibleCharacterParticipates(lineMatch.result, characterKey), true, `${characterKey} preview must contain that visible participating character`);
+  const combinationMatch = rr.findCharacterPreviewResult("combination", characterKey, state, 5, 4);
+  assert.equal(rr.visibleCharacterInCombination(combinationMatch.result, characterKey), true, `${characterKey} combination preview must contain that participating character`);
+}
+
 const source = read("js/reel-reactions.js");
 const engine = read("js/game-engine.js");
 const index = read("index.html");
+assert.match(source, /characterKey = "STR"/);
+assert.match(source, /id === "STR" \? " selected"/);
+assert.match(source, /visibleCharacterParticipates/);
+assert.match(source, /visibleCharacterInCombination/);
 assert.match(source, /cell\.dataset\.symbol/, "Visible cell symbol must govern Wild behavior");
 assert.match(source, /prefers-reduced-motion/);
 assert.match(source, /stopAll\(\)/);
