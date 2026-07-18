@@ -121,8 +121,8 @@
     cells.forEach(item => {
       const image = cellImage(item.cell);
       if (!image) return;
-      const visibleKey = image.dataset.symbolKey || item.cell.dataset.symbolKey || item.symbolKey;
-      const symbolKey = visibleKey === "TOL" ? "TOL" : item.symbolKey;
+      const visibleKey = item.cell.dataset.symbol || item.symbolKey;
+      const symbolKey = visibleKey === "TOL" ? "TOL" : visibleKey;
       const chain = resolveVariantChain(symbolKey, tier);
       const baseSrc = baseAsset(symbolKey)?.path || image.getAttribute("src") || "";
       const reactionSrc = chain.find(asset => asset?.path && asset.path !== baseSrc)?.path || baseSrc;
@@ -195,7 +195,7 @@
     const scenarioId = tier === "combination" ? "combination" : tier === "jackpot" ? "big-win" : `${tier}-win`;
     const scenario = app.qa.findScenario(scenarioId, {
       state,
-      spinType: tier === "small" || tier === "nice" || tier === "big" || tier === "jackpot" || tier === "combination" ? "free" : "free",
+      spinType: "free",
       referenceBet: app.payouts.getTotalBet(state),
       totalAwardedSpins: state.freeSpinSession?.totalAwardedSpins || 4,
     });
