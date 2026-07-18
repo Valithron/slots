@@ -2,26 +2,17 @@
 
 ## Scope
 
-This asset-independent foundation keeps audio optional and isolated from reel timing, result generation, settlement, persistence, and RTP. The game remains playable when every audio source is absent.
+This foundation keeps audio optional and isolated from reel timing, result generation, settlement, persistence, and RTP.
 
-## Architecture
+Commune Fortune's existing synthesized sounds remain the built-in default and fallback. Future recorded assets can replace individual semantic events without redesigning gameplay or making the game silent while assets are still missing.
 
-`js/audio.js` owns the centralized event catalog, bus defaults, lifecycle, loading, playback handles, concurrency, persistence, and QA status panel. Existing gameplay helper calls are preserved through a compatibility adapter, but all playback now routes through one manager. Do not construct `Audio` elements in unrelated modules.
+## Central manager
 
-The manager prefers one Web Audio `AudioContext`, falls back to `HTMLAudioElement`, and becomes a safe no-op when neither backend is available.
+All playback routes through `app.audio`. Gameplay modules must not create `Audio`, `AudioContext`, source nodes, or gain nodes directly.
 
-## Public API
+The manager supports initialization, user-gesture unlock, preload groups, one-shot and loop playback, playback handles, owner cleanup, stop-all, pause/resume, mute, master and bus volumes, persisted settings, and status inspection.
 
-- `initialize()` loads settings and lifecycle listeners.
-- `unlock()` creates or resumes audio after a user gesture.
-- `preloadGroup(groupId)` loads one configured preload group.
-- `play(eventId, options)` and `playLoop(eventId, options)` return handles or `null`.
-- `stop()`, `stopGroup()`, `stopOwner()`, and `stopAll()` clean up playback.
-- `pauseAll()` and `resumeAll()` handle page and app interruption.
-- `setMuted()`, `setMasterVolume()`, and `setBusVolume()` persist preferences.
-- `beginSpinSession()` and `endSpinSession()` support owner cleanup.
-- `clearFeatureAudio()` stops feature and character audio.
-- `getStatus()` and `getAssets()` support QA diagnostics.
+The original helper methods used by the current game remain available through `app.audio.createAudio()`.
 
 ## Buses
 
@@ -36,50 +27,92 @@ The manager prefers one Web Audio `AudioContext`, falls back to `HTMLAudioElemen
 | Features | 0.90 |
 | Characters | 1.00 |
 
-Effective gain is master × bus × event × instance volume. Muting stops active playback and blocks new playback. Unmuting never replays missed one-shots.
+## Asset resolution
 
-## Asset states
+Each event resolves to one of these states:
 
-Every event resolves to `available`, `missing`, `failed`, `disabled`, or `not-yet-loaded`. Missing files return `null`, log at most once in QA mode, and never throw into gameplay.
+- `available`
+- `synthetic-fallback`
+- `failed`
+- `disabled`
+- `not-yet-loaded`
+
+An available recorded asset overrides the synthesized cue. An event with no file, a missing file, or a failed file uses its synthesized fallback when one exists. Unknown events remain silent and harmless.
+
+This means the game remains fully playable with no `assets/audio` directory while still retaining the current sound design.
+
+## Unlock lifecycle
+
+`initialize()` never creates an audio context. `unlock()` creates or resumes one only after a meaningful user gesture. It also starts a silent one-frame buffer for iOS/WebKit compatibility. Rejected autoplay or resume attempts are absorbed and never interrupt gameplay.
+
+Only one audio context is created per manager.
 
 ## Concurrency
 
-Supported policies are `allow`, `restart`, `ignore-if-playing`, `replace-oldest`, `limit-N`, and `single-per-owner`. Long sounds return explicit handles. Owner IDs should be stable spin, presentation, feature-session, or activation IDs.
+Supported policies:
 
-## Unlock and interruption behavior
+- `allow`
+- `restart`
+- `ignore-if-playing`
+- `replace-oldest`
+- `limit-N`
+- `single-per-owner`
 
-The first sound-producing interaction calls `unlock()`. The manager creates at most one context, resumes suspended or interrupted contexts, and starts a silent buffer for iOS compatibility. Autoplay rejection is absorbed.
-
-When the document becomes hidden, audio is suspended. On return, loops may resume, while interrupted one-shots are discarded instead of producing a delayed burst.
+Playback handles track event, bus, owner, group, loop state, start time, active source or element, and stopped state. The initial global one-shot ceiling is 20.
 
 ## Persistence
 
-Only mute, master volume, and bus volumes are persisted. Active handles, source positions, queues, and spin state are never persisted. The existing game sound toggle continues to gate the compatibility adapter.
+Persisted audio settings are limited to:
 
-## Registering an event
+- muted
+- master volume
+- bus volumes
 
-Add one semantic entry to the centralized catalog in `audio.js` and later provide fallback sources:
+Active handles, playback positions, queued sounds, and session state are never persisted. The existing public sound toggle continues to gate the manager.
+
+## Visibility and interruptions
+
+When the page is hidden, HTML audio is paused and the Web Audio context is suspended. On return, only valid loops may resume. Old one-shots are not replayed, preventing a burst after app switching or screen lock.
+
+Muting stops active handles immediately. Unmuting does not replay missed sounds.
+
+## Preload groups
+
+Events may declare:
+
+- `critical`
+- `early`
+- `feature`
+- `on-demand`
+
+Preloading is advisory and never blocks gameplay or animation.
+
+## QA status
+
+Open `?qa=ally` or `?qa=audio` to see backend, context state, unlock state, mute state, active handles, available assets, synthesized fallbacks, failed assets, and unloaded assets.
+
+The normal synthesized game cues are intentional product audio. Any later QA-only test tones should remain a separate mechanism.
+
+## Registering a real asset
+
+Add sources to the centralized event definition:
 
 ```js
 "win.big": {
   bus: "wins",
   sources: [
     "assets/audio/wins/win-big-01.ogg",
-    "assets/audio/wins/win-big-01.mp3",
+    "assets/audio/wins/win-big-01.mp3"
   ],
   volume: 1,
   concurrency: "restart",
   preload: "early",
-  required: false,
+  required: false
 }
 ```
 
-Gameplay should reference only `win.big`; filenames remain centralized.
+Do not put filenames in gameplay modules. Once a source is available, it automatically replaces that event's synthesized fallback.
 
-## QA
+## PR 1 limits
 
-Open `?qa=ally` or `?qa=audio`. The Audio status panel reports backend, context state, unlock state, mute state, active handles, and asset counts. Synthetic tones and complete sequence controls belong to the later QA-audio PR and are not enabled in normal play.
-
-## Browser limits
-
-Web Audio decode and exact loop behavior vary by browser. No load or playback promise may gate animation. iOS can interrupt a context during app switching; the manager treats this as recoverable and does not queue old one-shots.
+This foundation does not yet include the full semantic event catalog, authoritative exactly-once hooks, reel sequencing controller, scene transitions, music crossfades, ducking, voice priority, or the complete QA sequence console.
