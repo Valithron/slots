@@ -119,11 +119,30 @@ The exact solver reports mean, variance, zero-pay probability, activation metric
 
 See `docs/math-model.md` for ability-specific metrics, exact state definitions, settlement rules, and tuning history.
 
+## Hidden QA mode
+
+Choose Your Ally can be tested without waiting for a natural Three Trees result. Add `?qa=ally` to the page URL, for example `https://your-preview.example/?qa=ally`. The exact query gate adds a red **TEST MODE** panel; removing the query returns the game to normal play.
+
+The QA panel is entirely client-side. It has no backend, account, database, network request, or production-visible admin route. It queues deterministic reel stops and feature rolls through the same production result generator, persistence, animations, ally modifiers, settlement, retrigger, and summary paths used by ordinary play.
+
+Recommended ally test flow:
+
+1. Press **Trigger Free Spins**. The next paid spin is forced to natural Three Trees and still pays, settles, and opens the real feature normally.
+2. Choose an ally manually, or select one in the panel and press **Apply Ally Selection**.
+3. Press the normal **Start** button. QA step mode pauses before each free spin.
+4. Select a precise next result, then press **Queue & Run Next**. Available cases include a clean loss, weak win, ordinary Small Win, Nice Win, Big Win, retrigger, Tree Awakening, and named combination.
+5. Use **Force Ally Ability** to prepare the current ally's qualifying state and next result.
+6. Use **Set 1 Spin Left** to reach Insurance, Echo, or the summary quickly.
+7. Use **Reset Feature State** before switching to another ally.
+
+The current reel math has no standalone non-trigger Big Win. The QA Big Win case therefore truthfully produces a Big Win together with natural Three Trees instead of fabricating a payout outside the production math. QA settings and queued cases use `sessionStorage`; the actual game and feature state continue to use the normal reload-safe persistence layer.
+
 ## Commands
 
 ```bash
 npm test
 npm run test:allies
+npm run test:qa
 npm run simulate
 npm run simulate:json
 npm run simulate:monte-carlo
