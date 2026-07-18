@@ -72,6 +72,7 @@
 
 .qa-panel button { padding: 8px 10px; cursor: pointer; }
 .qa-panel button:active { transform: translateY(1px); }
+.qa-panel button:disabled { cursor: wait; opacity: 0.58; }
 .qa-panel button:focus-visible,
 .qa-panel select:focus-visible,
 .qa-panel input:focus-visible { outline: 2px solid #ffb1b1; outline-offset: 2px; }
@@ -96,6 +97,15 @@
 .qa-status[data-tone="error"] { background: #5b2028; color: #ffc0c7; }
 .qa-note { color: #aaa5b8; font-size: 10px; font-weight: 500; }
 .qa-note code { color: #fff; }
+
+.qa-section {
+  margin: 12px 0;
+  border-block: 1px solid rgb(255 255 255 / 0.12);
+  padding: 11px 0;
+}
+.qa-section h3 { margin: 0; font-size: 14px; }
+.qa-section p { margin: 5px 0 8px; color: #bdb9cc; font-size: 10px; font-weight: 500; }
+.qa-section > button { width: 100%; background: #3e365d; }
 
 @media (max-width: 520px) {
   .qa-panel { width: min(340px, calc(100vw - 16px)); }
