@@ -1,6 +1,9 @@
 name: Tree SHA
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - feature/choose-your-ally
