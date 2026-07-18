@@ -1,0 +1,371 @@
+(() => {
+  "use strict";
+
+  const app = globalThis.CommuneFortune;
+  const { CONFIG } = app;
+  const query = new URLSearchParams(globalThis.location?.search || "");
+  const enabled = query.get("qa") === "ally";
+  const STORAGE_KEY = "commune-fortune-ally-qa-v1";
+  const SCENARIOS = Object.freeze({
+    "three-trees": Object.freeze({ label: "Three Trees trigger", spinType: "paid", expandingRoll: 1 }),
+    loss: Object.freeze({ label: "Clean loss", spinType: "free", expandingRoll: 1 }),
+    "weak-win": Object.freeze({ label: "Weak win below 3×", spinType: "free", expandingRoll: 1 }),
+    "small-win": Object.freeze({ label: "Ordinary Small Win", spinType: "free", expandingRoll: 1 }),
+    "nice-win": Object.freeze({ label: "Nice Win", spinType: "free", expandingRoll: 0 }),
+    "big-win": Object.freeze({ label: "Big Win + Three Trees", spinType: "free", expandingRoll: 0 }),
+    retrigger: Object.freeze({ label: "Three Trees retrigger", spinType: "free", expandingRoll: 1 }),
+    awakening: Object.freeze({ label: "Tree Awakening", spinType: "free", expandingRoll: 0 }),
+    combination: Object.freeze({ label: "Named Commune combination", spinType: "free", expandingRoll: 1 }),
+  });
+
+  let controls = null;
+  let panel = null;
+  let statusElement = null;
+  let snapshotElement = null;
+  let scenarioSelect = null;
+  let allySelect = null;
+  let stepCheckbox = null;
+  let waiter = null;
+  let stepCredits = 0;
+  let lastSnapshot = null;
+  const cache = new Map();
+
+  function readSession() {
+    try {
+      const parsed = JSON.parse(globalThis.sessionStorage?.getItem(STORAGE_KEY) || "null");
+      return {
+        stepMode: parsed?.stepMode !== false,
+        queued: {
+          paid: typeof parsed?.queued?.paid === "string" ? parsed.queued.paid : null,
+          free: typeof parsed?.queued?.free === "string" ? parsed.queued.free : null,
+        },
+        collapsed: Boolean(parsed?.collapsed),
+      };
+    } catch {
+      return { stepMode: true, queued: { paid: null, free: null }, collapsed: false };
+    }
+  }
+
+  const session = readSession();
+
+  function persist() {
+    if (!enabled) return;
+    try {
+      globalThis.sessionStorage?.setItem(STORAGE_KEY, JSON.stringify(session));
+    } catch {
+      // QA state is disposable. The game itself still persists normally.
+    }
+  }
+
+  function setStatus(message, tone = "neutral") {
+    if (statusElement) {
+      statusElement.textContent = message;
+      statusElement.dataset.tone = tone;
+    }
+  }
+
+  function scenarioDefinition(id) {
+    const definition = SCENARIOS[id];
+    if (!definition) throw new Error(`Unknown QA scenario: ${id}`);
+    return definition;
+  }
+
+  function matchesScenario(id, result) {
+    const noTrigger = !result.freeSpinTrigger?.triggered;
+    const noAwakening = !result.transformations?.length;
+    const noCombination = !result.combinationWins?.length;
+    if (id === "three-trees") return Boolean(result.freeSpinTrigger?.triggered && result.freeSpinTrigger.awardedSpins > 0);
+    if (id === "loss") return result.totalWin === 0 && noTrigger && noAwakening && noCombination;
+    if (id === "weak-win") return result.totalWin > 0
+      && result.totalWin < result.referenceBet * CONFIG.allies.gabi.parameters.thresholdMultiplier
+      && result.naturalWinTier === app.WIN_TIERS.SMALL
+      && noTrigger && noAwakening && noCombination;
+    if (id === "small-win") return result.totalWin > 0
+      && result.naturalWinTier === app.WIN_TIERS.SMALL
+      && noTrigger && noAwakening && noCombination;
+    if (id === "nice-win") return result.finalWinTier === app.WIN_TIERS.NICE && noTrigger;
+    if (id === "big-win") return [app.WIN_TIERS.BIG, app.WIN_TIERS.JACKPOT].includes(result.finalWinTier);
+    if (id === "retrigger") return Boolean(result.freeSpinTrigger?.triggered
+      && result.freeSpinTrigger.retrigger
+      && result.freeSpinTrigger.awardedSpins > 0);
+    if (id === "awakening") return result.transformations?.some(item => item.type === "expanding-wild") && noTrigger;
+    if (id === "combination") return result.combinationWins?.length > 0 && noTrigger && noAwakening;
+    return false;
+  }
+
+  function findScenario(id, {
+    state,
+    spinType = scenarioDefinition(id).spinType,
+    referenceBet = app.payouts.getTotalBet(state),
+    totalAwardedSpins = state?.freeSpinSession?.totalAwardedSpins || 0,
+  } = {}) {
+    const definition = scenarioDefinition(id);
+    const key = [id, spinType, state?.lineBetIndex || 0, referenceBet, totalAwardedSpins].join(":");
+    const cached = cache.get(key);
+    if (cached) return structuredClone(cached);
+
+    const featureRolls = { expandingWild: { roll: definition.expandingRoll } };
+    for (let first = 0; first < CONFIG.reels[0].length; first += 1) {
+      for (let second = 0; second < CONFIG.reels[1].length; second += 1) {
+        for (let third = 0; third < CONFIG.reels[2].length; third += 1) {
+          const targetStops = [first, second, third];
+          const result = app.payouts.createSpinResult({
+            targetStops,
+            state,
+            id: `qa-probe-${id}-${first}-${second}-${third}`,
+            spinType,
+            paidSpin: spinType === "paid",
+            referenceBet,
+            totalAwardedSpins,
+            featureRolls,
+            allyBypass: true,
+            createdAt: "2000-01-01T00:00:00.000Z",
+          });
+          if (!matchesScenario(id, result)) continue;
+          const match = { id, label: definition.label, targetStops, featureRolls };
+          cache.set(key, structuredClone(match));
+          return match;
+        }
+      }
+    }
+    throw new Error(`No valid ${definition.label} result exists for the current feature state.`);
+  }
+
+  function queueScenario(spinType, id) {
+    if (!enabled) return false;
+    const definition = scenarioDefinition(id);
+    if (definition.spinType !== spinType && !(spinType === "free" && id === "three-trees")) {
+      throw new Error(`${definition.label} is not a ${spinType} scenario.`);
+    }
+    session.queued[spinType] = id;
+    persist();
+    setStatus(`${definition.label} queued for the next ${spinType === "paid" ? "paid" : "free"} spin.`, "ready");
+    updatePanel();
+    return true;
+  }
+
+  function consumeSpinOverride({ spinType, state, referenceBet, totalAwardedSpins = 0 } = {}) {
+    if (!enabled) return null;
+    const id = session.queued[spinType];
+    if (!id) return null;
+    session.queued[spinType] = null;
+    persist();
+    try {
+      const match = findScenario(id, { state, spinType, referenceBet, totalAwardedSpins });
+      setStatus(`${match.label} locked into the real result generator.`, "active");
+      updatePanel();
+      return match;
+    } catch (error) {
+      setStatus(error.message, "error");
+      updatePanel();
+      throw error;
+    }
+  }
+
+  function recordResolvedResult(result, override) {
+    if (!enabled || !override || !result) return;
+    const extras = [];
+    if (result.freeSpinTrigger?.triggered) extras.push(result.freeSpinTrigger.retrigger ? "retrigger" : "feature trigger");
+    if (result.transformations?.length) extras.push("Tree Awakening");
+    if (result.combinationWins?.length) extras.push(result.combinationWins[0].name);
+    const detail = extras.length ? `, ${extras.join(", ")}` : "";
+    setStatus(`${override.label} resolved for ${result.totalWin} coins${detail}.`, "success");
+  }
+
+  function waitForFreeSpinStep() {
+    if (!enabled || !session.stepMode) return Promise.resolve();
+    if (stepCredits > 0) {
+      stepCredits -= 1;
+      return Promise.resolve();
+    }
+    if (waiter) return waiter.promise;
+    let resolveWaiter;
+    const promise = new Promise(resolve => { resolveWaiter = resolve; });
+    waiter = { promise, resolve: resolveWaiter };
+    setStatus("Paused before the next Free Spin. Queue an outcome, then run one step.", "paused");
+    updatePanel();
+    return promise;
+  }
+
+  function releaseNextStep() {
+    if (!enabled) return false;
+    if (waiter) {
+      const current = waiter;
+      waiter = null;
+      current.resolve();
+    } else {
+      stepCredits = Math.min(1, stepCredits + 1);
+    }
+    setStatus("One Free Spin released.", "active");
+    updatePanel();
+    return true;
+  }
+
+  function cancelWait() {
+    stepCredits = 0;
+    if (!waiter) return;
+    const current = waiter;
+    waiter = null;
+    current.resolve();
+  }
+
+  function setStepMode(value) {
+    session.stepMode = Boolean(value);
+    persist();
+    if (!session.stepMode) cancelWait();
+    setStatus(session.stepMode ? "Step mode enabled." : "Free Spins will run automatically.", "ready");
+    updatePanel();
+  }
+
+  function invoke(name, ...args) {
+    const handler = controls?.[name];
+    if (typeof handler !== "function") {
+      setStatus("The game is still initializing.", "error");
+      return null;
+    }
+    try {
+      const result = handler(...args);
+      if (result?.message) setStatus(result.message, result.ok === false ? "error" : "success");
+      updatePanel();
+      return result;
+    } catch (error) {
+      setStatus(error.message, "error");
+      updatePanel();
+      return null;
+    }
+  }
+
+  function bindGameControls(nextControls) {
+    controls = nextControls;
+    updatePanel();
+  }
+
+  function snapshotText(snapshot) {
+    if (!snapshot) return "Game initializing…";
+    const sessionState = snapshot.freeSpinSession;
+    if (!sessionState?.active) return `Phase: ${snapshot.phase} · No active feature`;
+    const allyId = sessionState.ally?.selectedId;
+    const allyName = allyId ? CONFIG.allies[allyId]?.name : "not selected";
+    return `Phase: ${snapshot.phase} · ${sessionState.remainingSpins} spin${sessionState.remainingSpins === 1 ? "" : "s"} left · Ally: ${allyName}`;
+  }
+
+  function updateSnapshot({ state, phase } = {}) {
+    if (!enabled) return;
+    lastSnapshot = {
+      phase,
+      coins: state?.coins || 0,
+      freeSpinSession: state?.freeSpinSession ? {
+        active: Boolean(state.freeSpinSession.active),
+        status: state.freeSpinSession.status,
+        remainingSpins: state.freeSpinSession.remainingSpins,
+        completedSpins: state.freeSpinSession.completedSpins,
+        ally: state.freeSpinSession.ally ? {
+          selectedId: state.freeSpinSession.ally.selectedId,
+          confirmed: state.freeSpinSession.ally.confirmed,
+        } : null,
+      } : null,
+    };
+    updatePanel();
+  }
+
+  function updatePanel() {
+    if (!enabled || !panel) return;
+    panel.classList.toggle("is-collapsed", session.collapsed);
+    panel.querySelector("[data-qa-collapse]")?.setAttribute("aria-expanded", String(!session.collapsed));
+    if (snapshotElement) snapshotElement.textContent = snapshotText(lastSnapshot);
+    if (stepCheckbox) stepCheckbox.checked = session.stepMode;
+    const queuedPaid = session.queued.paid ? SCENARIOS[session.queued.paid]?.label : "none";
+    const queuedFree = session.queued.free ? SCENARIOS[session.queued.free]?.label : "none";
+    const queue = panel.querySelector("[data-qa-queue]");
+    if (queue) queue.textContent = `Queued: paid ${queuedPaid}; free ${queuedFree}`;
+  }
+
+  function mount() {
+    if (!enabled || !globalThis.document?.body || panel) return;
+    const wrapper = document.createElement("aside");
+    wrapper.className = "qa-panel";
+    wrapper.setAttribute("aria-label", "Choose Your Ally QA controls");
+    wrapper.innerHTML = `
+      <button class="qa-badge" type="button" data-qa-collapse aria-expanded="true">TEST MODE</button>
+      <div class="qa-panel-body">
+        <div class="qa-heading"><strong>Ally QA</strong><span>Client-side only</span></div>
+        <p class="qa-snapshot" data-qa-snapshot>Game initializing…</p>
+        <p class="qa-queue" data-qa-queue>Queued: none</p>
+        <div class="qa-row qa-row-split">
+          <button type="button" data-qa-action="trigger">Trigger Free Spins</button>
+          <button type="button" data-qa-action="coins">+10,000 Coins</button>
+        </div>
+        <label class="qa-field">Ally
+          <select data-qa-ally>${CONFIG.allyOrder.map(id => `<option value="${id}">${CONFIG.allies[id].name} · ${CONFIG.allies[id].abilityName}</option>`).join("")}</select>
+        </label>
+        <button type="button" data-qa-action="ally">Apply Ally Selection</button>
+        <div class="qa-row qa-row-split">
+          <button type="button" data-qa-action="ability">Force Ally Ability</button>
+          <button type="button" data-qa-action="one-left">Set 1 Spin Left</button>
+        </div>
+        <label class="qa-field">Next Free Spin
+          <select data-qa-scenario>
+            ${Object.entries(SCENARIOS).filter(([, item]) => item.spinType === "free").map(([id, item]) => `<option value="${id}">${item.label}</option>`).join("")}
+          </select>
+        </label>
+        <div class="qa-row qa-row-split">
+          <button type="button" data-qa-action="queue-run">Queue & Run Next</button>
+          <button type="button" data-qa-action="run">Run Random Next</button>
+        </div>
+        <label class="qa-check"><input type="checkbox" data-qa-step checked> Pause before each Free Spin</label>
+        <button class="qa-danger" type="button" data-qa-action="reset">Reset Feature State</button>
+        <p class="qa-status" data-qa-status data-tone="neutral">QA mode ready.</p>
+        <p class="qa-note">Remove <code>?qa=ally</code> from the URL for normal play. “Big Win” necessarily includes Three Trees under the current reel math.</p>
+      </div>`;
+    document.body.append(wrapper);
+    panel = wrapper;
+    statusElement = wrapper.querySelector("[data-qa-status]");
+    snapshotElement = wrapper.querySelector("[data-qa-snapshot]");
+    scenarioSelect = wrapper.querySelector("[data-qa-scenario]");
+    allySelect = wrapper.querySelector("[data-qa-ally]");
+    stepCheckbox = wrapper.querySelector("[data-qa-step]");
+
+    wrapper.querySelector("[data-qa-collapse]")?.addEventListener("click", () => {
+      session.collapsed = !session.collapsed;
+      persist();
+      updatePanel();
+    });
+    stepCheckbox?.addEventListener("change", () => setStepMode(stepCheckbox.checked));
+    wrapper.addEventListener("click", event => {
+      const action = event.target.closest("button[data-qa-action]")?.dataset.qaAction;
+      if (!action) return;
+      if (action === "trigger") invoke("triggerFeature");
+      else if (action === "coins") invoke("addCoins");
+      else if (action === "ally") invoke("applyAlly", allySelect?.value);
+      else if (action === "ability") invoke("forceAbility");
+      else if (action === "one-left") invoke("setOneSpinRemaining");
+      else if (action === "queue-run") {
+        try {
+          queueScenario("free", scenarioSelect?.value || "loss");
+          releaseNextStep();
+        } catch (error) {
+          setStatus(error.message, "error");
+        }
+      } else if (action === "run") releaseNextStep();
+      else if (action === "reset") invoke("resetFeature");
+    });
+    updatePanel();
+  }
+
+  app.qa = {
+    enabled,
+    scenarios: SCENARIOS,
+    findScenario,
+    queueScenario,
+    consumeSpinOverride,
+    recordResolvedResult,
+    waitForFreeSpinStep,
+    releaseNextStep,
+    cancelWait,
+    setStepMode,
+    bindGameControls,
+    updateSnapshot,
+  };
+
+  if (enabled) mount();
+})();

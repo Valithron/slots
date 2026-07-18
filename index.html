@@ -11,6 +11,8 @@
   <link rel="stylesheet" href="fortune.css" />
   <link rel="stylesheet" href="reactions-free-spins.css" />
   <link rel="stylesheet" href="mobile-effects.css" />
+  <link rel="stylesheet" href="ally-selection.css" />
+  <link rel="stylesheet" href="qa-mode.css" />
 </head>
 <body>
   <main class="app">
@@ -25,7 +27,7 @@
     <section class="machine" id="machine" aria-label="Commune Fortune slot machine">
       <div class="marquee">
         <div class="marquee-title">Commune Fortune</div>
-        <div class="marquee-sub">Five lines · Commune Free Spins · Fortune Spins</div>
+        <div class="marquee-sub">Five lines · Choose Your Ally · Fortune Spins</div>
       </div>
 
       <div class="status-strip">
@@ -38,6 +40,10 @@
         <div><span>Free Spins</span><strong id="freeSpinsRemaining">0</strong></div>
         <div><span>Feature Win</span><strong id="featureWinValue">0</strong></div>
         <div><span>Locked Bet</span><strong id="lockedBetValue">5</strong></div>
+        <div class="ally-hud" id="allyHud" hidden>
+          <img id="allyHudPortrait" src="assets/symbols/tree-of-life.svg" alt="" aria-hidden="true">
+          <span class="ally-hud-copy"><span id="allyHudName">Ally</span><strong id="allyHudValue">Ready</strong></span>
+        </div>
       </div>
 
       <div class="fortune-meter-wrap" id="fortuneMeterWrap">
@@ -114,6 +120,26 @@
           </div>
         </div>
 
+        <div class="ally-selection-layer" id="allySelectionLayer" aria-hidden="true">
+          <div class="ally-selection-panel" id="allySelectionPanel" role="dialog" aria-modal="true" aria-labelledby="allySelectionTitle">
+            <h2 class="ally-selection-heading" id="allySelectionTitle">Choose Your Ally</h2>
+            <p class="ally-selection-subtitle">Choose one Commune member. Your choice is locked when confirmed.</p>
+            <div class="ally-selection-grid" id="allySelectionGrid"></div>
+            <button class="spin-button ally-confirm-button" id="allyConfirmButton" type="button" disabled>Choose an Ally</button>
+          </div>
+        </div>
+
+        <div class="ally-callout-layer" id="allyCalloutLayer" aria-hidden="true">
+          <div class="ally-callout-panel" id="allyCalloutPanel" role="group" aria-label="Ally ability">
+            <img id="allyCalloutPortrait" src="assets/symbols/tree-of-life.svg" alt="">
+            <div class="ally-callout-copy">
+              <span class="ally-callout-name" id="allyCalloutName">Ally</span>
+              <strong class="ally-callout-ability" id="allyCalloutAbility">Ability</strong>
+              <p class="ally-callout-detail" id="allyCalloutDetail">Ability activated.</p>
+            </div>
+          </div>
+        </div>
+
         <div class="celebration-layer" id="celebrationLayer" aria-hidden="true">
           <div class="celebration-panel" id="celebrationPanel" role="group" aria-label="Win celebration">
             <div class="celebration-radiance" aria-hidden="true"></div>
@@ -161,8 +187,12 @@
         <li>The silver Tree of Life remains Wild and substitutes for any portrait.</li>
         <li>A Tree that naturally lands in the exact center cell may awaken and fill the middle reel with Wilds.</li>
         <li>Three natural Trees, one visible on each reel, trigger four Commune Free Spins. Tree Awakening cannot create this trigger.</li>
+        <li>Before new Free Spins begin, choose one of seven allies and confirm. The choice cannot change after the feature starts.</li>
+        <li>Sterling insures losses; Ryan marks one of the first four spins for 2×; Cooper builds Rage after losses; Cydney echoes 45% of the first win.</li>
+        <li>Gabi replays the first weak win below 3× total bet from a win-only pool; Kenly adds 37% to natural Small Wins; Ashley replays the first loss.</li>
         <li>The same natural Three Trees event during the feature retriggers two spins, up to twenty total awarded spins.</li>
         <li>Free spins use the triggering total bet. They cost no coins and do not build, consume, or multiply with Fortune.</li>
+        <li>All ally calculations use integer coins and round down. Replays are predetermined and settle only the accepted result.</li>
         <li>Tree Awakening, Commune combinations, all five paylines, character reactions, and manual reel stopping remain active during free spins.</li>
         <li>Named combinations trigger when the required three symbols appear in any order across the middle Commune Line.</li>
         <li>Top and bottom rows, vertical columns, diagonals, and other paylines do not trigger named combinations.</li>
@@ -172,9 +202,9 @@
         <li>A losing Fortune Spin still consumes the charge and begins the next meter cycle.</li>
         <li>While reels move, press Stop, Space, or Enter to request the next reel stop. Reels always stop left to right.</li>
         <li>Manual stopping changes presentation timing only. It cannot change the result, payout, features, or odds.</li>
-        <li>Character reactions use the current portraits. Missing future reaction variants safely fall back to the base portrait, then the Tree.</li>
+        <li>Character reactions and ally panels use the current portraits. Missing future variants safely fall back to the base portrait, then the Tree.</li>
         <li>Nice Wins and larger presentations can be skipped with Spin, Enter, or Space.</li>
-        <li>Your fake coin balance, Fortune Meter, pending result, free-spin session, feature rolls, and settings save automatically in this browser.</li>
+        <li>Your fake coin balance, Fortune Meter, pending result, ally choice, free-spin session, feature rolls, and settings save automatically in this browser.</li>
       </ul>
       <h3 class="combination-reference-heading">Commune combinations</h3>
       <div class="combination-reference" id="combinationReference"></div>
@@ -187,16 +217,23 @@
   <div class="sr-only" id="fortuneAnnouncer" role="status" aria-live="polite" aria-atomic="true"></div>
   <div class="sr-only" id="reactionAnnouncer" role="status" aria-live="polite" aria-atomic="true"></div>
   <div class="sr-only" id="freeSpinAnnouncer" role="status" aria-live="polite" aria-atomic="true"></div>
+  <div class="sr-only" id="allySelectionAnnouncer" role="status" aria-live="polite" aria-atomic="true"></div>
+  <div class="sr-only" id="allyCalloutAnnouncer" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <script src="js/config.js" defer></script>
   <script src="js/combination-clarity-config.js" defer></script>
+  <script src="js/ally-config.js" defer></script>
   <script src="js/reactions.js" defer></script>
   <script src="js/free-spins.js" defer></script>
+  <script src="js/allies.js" defer></script>
   <script src="js/persistence.js" defer></script>
+  <script src="js/ally-persistence.js" defer></script>
   <script src="js/visual-effects-settings.js" defer></script>
   <script src="js/statistics.js" defer></script>
   <script src="js/payouts.js" defer></script>
   <script src="js/combination-clarity-payouts.js" defer></script>
+  <script src="js/ally-payouts.js" defer></script>
+  <script src="js/qa-mode.js" defer></script>
   <script src="js/game-flow.js" defer></script>
   <script src="js/audio.js" defer></script>
   <script src="js/effects.js" defer></script>
@@ -206,6 +243,7 @@
   <script src="js/ui.js" defer></script>
   <script src="js/clarity-ui.js" defer></script>
   <script src="js/reactions-free-spins-ui.js" defer></script>
+  <script src="js/ally-ui.js" defer></script>
   <script src="js/game-engine.js" defer></script>
 </body>
 </html>

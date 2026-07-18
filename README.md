@@ -7,168 +7,164 @@ Commune Fortune is a private, static 3-by-3 slot-style game built with plain HTM
 - Five fixed paylines on three 24-stop reels
 - Authoritative predetermined spin results
 - Reload-safe, exactly-once settlement
-- Better Spin Drama and manual left-to-right reel stopping
+- Manual left-to-right reel stopping
 - Auto, Full, and Reduced visual-effects modes
-- WebKit-safe mobile reel-stop and anticipation feedback
+- Mobile WebKit compositing safeguards
 - Small, Nice, Big, and Commune Jackpot win tiers
 - Tree of Life Wild and Tree Awakening
 - Any-order named Commune Line combinations and Full Commune
 - Fortune Meter with a 1.5x charged paid spin
-- Character Reaction Framework using all seven current portraits
+- Character Reaction Framework using the seven existing portraits
 - Commune Free Spins with retriggers, locked bets, persistence, and MVP summary
-- Synthesized Web Audio cues
-- Exact weighted simulator and automated regression tests
+- Choose Your Ally with seven mutually exclusive free-spin abilities
+- Exact transition simulator, seeded Monte Carlo verification, and deterministic regression tests
 
-## Visual effects modes
+## Choose Your Ally
 
-The Help panel includes a local visual-effects preference:
+After a paid Three Trees trigger resolves, the player must select and confirm one Commune member before the free-spin intro begins. New sessions cannot start without a valid confirmed ally. The selected ally is saved before the first free spin and cannot change after the feature starts.
 
-```text
-Auto
-Full
-Reduced
-```
+| Ally | Ability | Final rule |
+| --- | --- | --- |
+| Sterling | No Whammys | Each final losing spin builds Insurance at 0.35x total bet per loss, capped at 1.5x total bet, paid once at feature end. |
+| Ryan | Big Win | One of the first four free-spin positions is stored secretly. Its monetary payout is multiplied by 2x. A loss receives no benefit. |
+| Cooper | Rage-Bait | Consecutive losses prepare the next win at 1.3x, 1.6x, then 2x. Rage resets after that win and expires unused at feature end. |
+| Cydney | I’m Listening | The first final monetary win is recorded. The feature pays an Echo equal to 45% of that win at feature end. |
+| Gabi | Eww | The first win below 3x total bet is replayed from a win-only judgment pool. The coherent result with the greater monetary payout is retained. Ties retain the original. |
+| Kenly | Big Lemons | Every natural Small Win receives a 37% Lemonade Bonus. The tier is classified before the ally bonus. |
+| Ashley | Fastball | The first losing spin is replayed once. The original loss is abandoned, and only the replay result settles. |
 
-- **Auto** follows the device or browser `prefers-reduced-motion` setting.
-- **Full** uses the complete presentation allowed for the current device class.
-- **Reduced** removes repeated pulsing and uses the shortest visible feedback.
+All multipliers and percentages use integer coins and `Math.floor`. Only one ally is active per free-spin session. Ally abilities do not interact with one another and do not alter the Fortune Meter.
 
-The preference is saved in browser state as:
+### Selection and recovery
 
-```js
-visualEffectsMode: "auto" // "auto" | "full" | "reduced"
-```
+The session stores the pending selection, confirmation state, selected ally, hidden Ryan spin, replay results, streak state, recorded values, and end-bonus payment flags.
 
-All reduced-motion decisions route through `app.effects.getMotionMode(state)` and `app.effects.isReducedMotionActive(state)`. Mobile tuning activates at 768 pixels or narrower or when a coarse pointer is reported. It changes presentation intensity only and has **0.0000% RTP effect**.
+- Reload before confirmation restores the selection screen.
+- Reload after confirmation restores the exact ally.
+- Reload during a replay settles the already stored coherent result once.
+- Reload before Insurance or Echo payment cannot duplicate the end bonus.
+- Legacy free-spin sessions created before this feature continue without an ally. No random ally is invented for an old session.
 
-### Mobile WebKit stability
+## Authoritative replay model
 
-On iPhone Safari, iPhone Chrome, and many application browsers, the engine is WebKit. Transforming or filtering the clipped reel viewport, reel frame, or entire cabinet while the long reel strip is independently transform-animated can cause blank reels and severe clipping.
+Ashley and Gabi produce a composite pending result before presentation begins. It contains the original result, replacement result, selected result identifier, and final coherent payout. The composite result is saved before either reel presentation runs.
 
-Mobile tactile feedback therefore keeps reel geometry stationary:
+Only the selected result contributes payout, retriggers, Tree Awakening, combinations, feature totals, contribution statistics, and settlement. The abandoned result never settles.
 
-- no mobile reel-viewport bump transform
-- no mobile frame filter animation
-- no mobile cabinet movement
-- stop feedback uses a short overlay flash
-- final-reel anticipation uses an overlay glow
-
-The mobile-safe classes are applied before reel construction and before any spin can start. Automated compositing guards prevent mobile viewport, frame, or cabinet movement from being reintroduced. Physical iPhone and in-app-browser verification is required before merge.
-
-Desktop retains the existing localized movement where it is stable.
-
-## Commune Line combinations
-
-The dedicated Commune Line remains the middle row only. Named combinations trigger when their required three symbols appear in **any order** across that row.
-
-They do not trigger on the top row, bottom row, vertical columns, diagonals, or other paylines. Combination detection always uses `originalMatrix`, so Tree Awakening cannot manufacture a combination.
-
-| Combination | Required symbols | Award |
-| --- | --- | ---: |
-| KPs | Sterling, Cydney, Tree | 2× line bet |
-| Walls | Ryan, Gabi, Tree | 2× line bet |
-| Jaaps | Kenly, Cooper, Tree | 2× line bet |
-| Brotherhood | Cooper, Sterling, Ryan | 3× line bet |
-| Wives’ Circle | Kenly, Gabi, Cydney | 1× line bet |
-| Household | Ashley, Sterling, Cydney | 2× line bet |
-| Full Commune | All seven members visible and Tree in center | 5× total bet |
-
-Full Commune remains a separate grid-wide special case and suppresses the lesser named combinations.
-
-## Character Reaction Framework
-
-Reaction presentation is centralized in `CONFIG.characterPresentation`. All portrait URLs pass through `versionAssetUrl`, and missing optional reaction variants fall back to the current base portrait and then to the Tree of Life.
-
-Pure reaction selection gives priority to Full Commune, named combinations, a unique dominant line winner, tied dominant winners, Tree-only wins, and finally no reaction. During free spins, reactions use a shorter compact mode. The final summary uses ordinary line-win attribution to select a unique MVP, tied group, Tree MVP, or neutral Commune result.
+Gabi's production replacement generator draws until it obtains a positive result, up to 512 authoritative attempts. A deterministic positive fallback is stored if the limit is reached. The exact simulator models the equivalent conditional positive-outcome distribution.
 
 ## Commune Free Spins
 
-A paid spin triggers four free spins when the natural visible `originalMatrix` contains at least one Tree of Life on each reel. The same natural Three Trees event during a free spin awards two additional spins, with a maximum of twenty total awarded spins.
+A paid spin triggers four free spins when `originalMatrix` contains at least one natural Tree on each reel. The same natural event during a free spin awards two additional spins, with a maximum of twenty total awarded spins.
 
-Free spins:
+Free spins retain all paylines, Wild substitution, Tree Awakening, combinations, win tiers, reactions, and manual stopping. They cost zero coins, lock the triggering line bet and reference bet, do not add Fortune, do not consume a charged Fortune state, and do not receive the Fortune multiplier.
 
-- use all five paylines
-- retain ordinary Wild substitution
-- retain Tree Awakening
-- retain Commune combinations
-- retain win tiers, reactions, and manual stopping
-- cost zero coins
-- do not add Fortune points
-- do not consume a charged Fortune Meter
-- do not receive the 1.5x Fortune multiplier
-- do not permit bet adjustment or Refill
+## Mobile presentation boundary
 
-The triggering line bet and reference total bet remain locked for the entire feature.
+Choose Your Ally adds static cards, borders, opacity transitions, checkmarks, a compact HUD, and short callouts. It does not change reel rendering, cabinet movement, stop bumps, viewport transforms, frame filters, or the rolled-back mobile smoothing work.
 
-## Authoritative result and recovery model
-
-Every result stores explicit paid/free classification, coin cost, reference bet, target stops, original and resolved matrices, feature rolls, transformations, line wins, combination wins, modifiers, trigger data, and settlement status before reel animation begins.
-
-Animation progress is not persisted. On reload, the authoritative result is restored and settled exactly once. Recovery handles refreshes during reel movement, trigger intro, free-spin settlement, reaction, retrigger, and summary without rerolls, lost spins, duplicated credits, duplicated retriggers, or Fortune changes.
+The selection screen supports touch, native keyboard focus, narrow layouts, and reduced motion. Existing portrait fallback behavior remains in force. No alternate reaction art is required.
 
 ## Exact math
 
-At line bet 1 and total bet 5, the production simulator enumerates all 55,296 weighted stop-and-Tree-roll outcomes, solves the Fortune stationary distribution, and solves the bounded free-spin transition model exactly.
+At line bet 1 and total bet 5, the simulator enumerates all 55,296 weighted reel-stop and Tree-roll outcomes, solves the Fortune stationary distribution, then solves the bounded free-spin and ally state machines.
 
-| Metric | Previous exact-order model | New any-order model |
+### Current baseline
+
+| Metric | Exact result |
+| --- | ---: |
+| Base line RTP | 82.0023% |
+| Tree Awakening increment | 2.6215% |
+| Combination RTP | 2.7980% |
+| Fortune increment | 1.1016% |
+| RTP before free spins | 88.5234% |
+| Free-spin increment | 5.6401% |
+| Current total RTP | 94.1636% |
+| Average base feature payout | 18.048387 coins |
+| Base feature zero-pay frequency | 19.0708% |
+| Average free spins per feature | 4.129032 |
+| Features with a retrigger | 6.1050% |
+| Maximum base feature payout | 2,020 coins |
+| Maximum trigger-plus-feature payout | 2,171 coins |
+
+### Initial untuned ally results
+
+| Ally | Proposed incremental RTP | Proposed total RTP |
 | --- | ---: | ---: |
-| Base line RTP | 82.0023% | 82.0023% |
-| Tree Awakening increment | 2.6215% | 2.6215% |
-| Total combination RTP | 2.1759% | 2.7980% |
-| Named combination RTP | 1.5972% | 2.2193% |
-| Full Commune RTP | 0.5787% | 0.5787% |
-| Fortune increment | 1.0190% | 1.1016% |
-| RTP before free spins | 87.8188% | 88.5234% |
-| Free-spin increment | 5.6000% | 5.6401% |
-| Final combined RTP | 93.4188% | 94.1636% |
-| Total RTP change | — | +0.7448 percentage points |
-| Visual-effects RTP effect | 0.0000% | 0.0000% |
+| Sterling | 2.0559% | 96.2194% |
+| Ryan | 5.4639% | 99.6274% |
+| Cooper | 2.4245% | 96.5880% |
+| Cydney | 1.5880% | 95.7516% |
+| Gabi | 0.2171% | 94.3806% |
+| Kenly | 1.9867% | 96.1503% |
+| Ashley | 1.3912% | 95.5547% |
 
-### Exact combination trigger frequencies
+The initial proposal was not balanced. Ryan was far too strong, while Gabi's unrestricted ordinary replay was too weak to reach parity through threshold changes alone.
 
-| Combination | Previous | New |
-| --- | ---: | ---: |
-| KPs | 0.1157% | 0.6944% |
-| Walls | 0.1157% | 0.6076% |
-| Jaaps | 0.1736% | 1.0489% |
-| Brotherhood | 0.0868% | 0.5787% |
-| Wives’ Circle | 0.4630% | 2.3438% |
-| Household | 0.1736% | 1.1574% |
-| Full Commune | 0.1157% | 0.1157% |
+### Final tuned ally results
 
-See `docs/math-model.md` for the exact contribution table and transition details.
+| Ally | Incremental RTP | Total RTP | Average feature | Zero-pay | Standard deviation | Maximum feature |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Sterling | 1.3906% | 95.5542% | 22.4984 | 0.0000% | 17.1166 | 2,020 |
+| Ryan | 1.3660% | 95.5295% | 22.4195 | 19.0708% | 23.3131 | 2,121 |
+| Cooper | 1.2975% | 95.4611% | 22.2005 | 19.0708% | 21.5357 | 2,020 |
+| Cydney | 1.3279% | 95.4914% | 22.2976 | 19.0708% | 21.4539 | 2,065 |
+| Gabi | 1.3007% | 95.4642% | 22.2105 | 19.0708% | 20.5079 | 2,020 |
+| Kenly | 1.3031% | 95.4666% | 22.2183 | 19.0708% | 20.7610 | 2,020 |
+| Ashley | 1.3912% | 95.5547% | 22.5001 | 12.6104% | 20.0844 | 2,020 |
+
+The final total-RTP range is **95.4611% to 95.5547%**. The parity spread is **0.0936 percentage points**, inside the preferred 0.10-point target. Ryan remains the most volatile. Sterling is the least volatile and eliminates zero-pay feature totals through Insurance. Ashley materially reduces zero-pay sessions while retaining more volatility than Sterling.
+
+The exact solver reports mean, variance, zero-pay probability, activation metrics, and maxima. It intentionally omits median because retaining full payout distributions across all replay states would substantially increase memory without affecting the parity decision.
+
+See `docs/math-model.md` for ability-specific metrics, exact state definitions, settlement rules, and tuning history.
+
+## Hidden QA mode
+
+Choose Your Ally can be tested without waiting for a natural Three Trees result. Add `?qa=ally` to the page URL, for example `https://your-preview.example/?qa=ally`. The exact query gate adds a red **TEST MODE** panel; removing the query returns the game to normal play.
+
+The QA panel is entirely client-side. It has no backend, account, database, network request, or production-visible admin route. It queues deterministic reel stops and feature rolls through the same production result generator, persistence, animations, ally modifiers, settlement, retrigger, and summary paths used by ordinary play.
+
+Recommended ally test flow:
+
+1. Press **Trigger Free Spins**. The next paid spin is forced to natural Three Trees and still pays, settles, and opens the real feature normally.
+2. Choose an ally manually, or select one in the panel and press **Apply Ally Selection**.
+3. Press the normal **Start** button. QA step mode pauses before each free spin.
+4. Select a precise next result, then press **Queue & Run Next**. Available cases include a clean loss, weak win, ordinary Small Win, Nice Win, Big Win, retrigger, Tree Awakening, and named combination.
+5. Use **Force Ally Ability** to prepare the current ally's qualifying state and next result.
+6. Use **Set 1 Spin Left** to reach Insurance, Echo, or the summary quickly.
+7. Use **Reset Feature State** before switching to another ally.
+
+The current reel math has no standalone non-trigger Big Win. The QA Big Win case therefore truthfully produces a Big Win together with natural Three Trees instead of fabricating a payout outside the production math. QA settings and queued cases use `sessionStorage`; the actual game and feature state continue to use the normal reload-safe persistence layer.
 
 ## Commands
 
 ```bash
 npm test
+npm run test:allies
+npm run test:qa
 npm run simulate
-npm run simulate:without-free-spins
-npm run simulate:with-free-spins
+npm run simulate:json
+npm run simulate:monte-carlo
 node tools/simulate.mjs --check
-node tools/simulate.mjs --json
+node tools/simulate.mjs --monte-carlo --sessions=200000
 ```
 
 ## Feature flags
 
-Character reactions and free spins remain independent feature flags:
-
 ```js
-CONFIG.features.characterReactions
 CONFIG.features.freeSpins
+CONFIG.features.chooseYourAlly
+CONFIG.features.allyAbilities
+CONFIG.features.characterReactions
 ```
 
-Visual-effects mode is a presentation preference rather than a feature flag and cannot change results, payouts, settlement, or RTP.
+Disabling `allyAbilities` preserves the current pre-ally free-spin result math. Legacy sessions also follow the pre-ally path. Selection presentation is separately controlled by `chooseYourAlly`.
 
-## Accessibility
+## Known limitations
 
-Auto respects the operating-system reduced-motion preference. Reduced mode removes repeated movement and cabinet motion while keeping brief visible impact signaling, clear text labels, keyboard Skip, non-color labels, and meaningful announcements.
-
-## Known limitations and deferred work
-
-- Alternate reaction portraits, frame animations, and video expressions are deferred.
-- Ally Selection and all seven ally abilities are deferred.
-- No Scatter symbol is used. The existing Tree performs both Wild and trigger roles.
-- Mystery modifiers, risk-or-collect, daily rewards, and secret events are deferred.
-- Audio is synthesized. No imported audio is included.
-- The project remains local-browser persistence only.
+- Alternate reaction portraits, frame animation, and imported audio remain deferred.
+- Physical iPhone Safari, iPhone Chrome, and in-app-browser verification is still required before merge.
+- Gabi's 512-attempt production guard has a deterministic fallback. The probability of exhausting the positive-result draw loop is negligible, but it is not mathematically identical to an unbounded loop.
+- Persistence remains local to the browser.
+- No Scatter symbol, mystery modifier, risk-or-collect system, daily reward, secret event, backend, database, framework, bundler, or runtime dependency is included.
