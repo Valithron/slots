@@ -134,7 +134,14 @@
     return null;
   }
   async function animateAuthoritativeFreeResult(result) {
-    if (result.allyEffect?.allyId === "ryan" && result.allyEffect.activated) await presentAllyCallout(result.allyEffect);
+    if (result.allyEffect?.allyId === "ryan" && result.allyEffect.activated) {
+      await presentAllyCallout({
+        allyId: "ryan",
+        abilityName: CONFIG.allies.ryan.abilityName,
+        activated: true,
+        preSpin: true,
+      });
+    }
     if (!result.allyReplay) return spinAnimation(result);
     await spinAnimation(result.allyReplay.originalResult);
     await presentAllyCallout(replayActivation(result));
