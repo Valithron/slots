@@ -47,7 +47,7 @@
   }
   function clearPresentation() {
     cleanup?.(); cleanup = null; aborter = null;
-    ui.hideCelebration(); ui.hideReaction(); ui.hideCombinationCallout(); ui.hideFortuneResult();
+    ui.hideCelebration(); ui.hideReaction(); ui.hideCombinationCallout(); ui.hideFortuneResult(); ui.hideAllyCallout?.();
     ui.clearAwakeningMark(); ui.clearCombinationMarks(); ui.clearTriggerTrees();
   }
   function signal(free = false) {
@@ -107,14 +107,39 @@
     ui.updateReactionAmount(result.totalWin);
   }
   function settle() { return app.payouts.settlePendingSpinState(state); }
-  async function spinAnimation(result) {
+  async function spinAnimation(result, { manualStopsEnabled = CONFIG.features.manualStops } = {}) {
     ui.setSpinning(true); audio.playSpinStart();
     await reels.spinTo(result.targetStops, {
       anticipation: CONFIG.features.spinDrama ? result.anticipation : "none",
       reducedMotion: app.effects.prefersReducedMotion(), dramaEnabled: CONFIG.features.spinDrama,
-      manualStopsEnabled: CONFIG.features.manualStops,
+      manualStopsEnabled,
     });
     ui.setSpinning(false);
+  }
+  async function presentAllyCallout(activation) {
+    if (!activation?.activated || !ui.showAllyCallout?.(activation, state.freeSpinSession)) return;
+    const duration = app.effects.prefersReducedMotion() ? 180 : 520;
+    await app.effects.wait(duration);
+    ui.hideAllyCallout();
+  }
+  function replayActivation(result) {
+    if (result.allyReplay?.type === "gabi") return {
+      allyId: "gabi", abilityName: CONFIG.allies.gabi.abilityName, activated: true,
+      selected: result.allyReplay.selected, bonus: result.allyReplay.netImprovement,
+    };
+    if (result.allyReplay?.type === "ashley") return {
+      allyId: "ashley", abilityName: CONFIG.allies.ashley.abilityName, activated: true,
+      bonus: result.allyReplay.netImprovement,
+    };
+    return null;
+  }
+  async function animateAuthoritativeFreeResult(result) {
+    if (result.allyEffect?.allyId === "ryan" && result.allyEffect.activated) await presentAllyCallout(result.allyEffect);
+    if (!result.allyReplay) return spinAnimation(result);
+    await spinAnimation(result.allyReplay.originalResult);
+    await presentAllyCallout(replayActivation(result));
+    await spinAnimation(result.allyReplay.replacementResult);
+    if (result.allyReplay.selected === "original") await restore(result.allyReplay.originalResult);
   }
   async function paidSpin() {
     if (phase !== GAME_STATES.IDLE || activeSession()) return;
@@ -140,9 +165,16 @@
   async function showIntro() {
     const session = state.freeSpinSession; if (!session?.active) return;
     setPhase(GAME_STATES.BONUS, true); clearPresentation(); ui.hideFreeSpinLayer(); await restore(session.triggerResult);
-    ui.markTriggerTrees(session.triggerTreeCells, session.triggerResult, reels); ui.showFreeSpinIntro(session);
+    ui.markTriggerTrees(session.triggerTreeCells, session.triggerResult, reels);
+    if (CONFIG.features.chooseYourAlly && !session.ally?.confirmed && !session.ally?.legacyNoAlly) {
+      ui.showAllySelection(session);
+      ui.showMessage("Choose one ally, then confirm your choice.", true);
+      ui.setControlsDisabled(true, state);
+      audio.playFreeSpinTrigger(); render(); return;
+    }
+    ui.hideAllySelection?.(); ui.showFreeSpinIntro(session);
     ui.showMessage(`${session.startingSpins} Commune Free Spins awarded.`, true); ui.setPrimaryAction("start");
-    ui.setControlsDisabled(true, state, { allowSpin: true }); audio.playFreeSpinTrigger(); render();
+    ui.setControlsDisabled(true, state, { allowSpin: true }); render();
   }
   async function showSummary() {
     if (!activeSession()) return;
@@ -175,8 +207,11 @@
           else if (session.status === FS.READY) {
             session.status = FS.SPINNING; setPhase(GAME_STATES.FREE_SPINS); ui.clearWins(); ui.clearFeaturePresentation();
             const result = app.payouts.createSpinResult({ targetStops: reels.randomStops(), state: app.freeSpins.getLockedSpinState(session, state), id: id("free"), spinType: "free", referenceBet: session.referenceBet, totalAwardedSpins: session.totalAwardedSpins });
-            state.pendingSpin = result; currentResult = result; save(); render(); await spinAnimation(result);
+            state.pendingSpin = result; currentResult = result; save(); render(); await animateAuthoritativeFreeResult(result);
             const done = settle(); statistics.recordSpin({ wager: done.referenceBet, coinCost: 0, payout: done.totalWin, spinType: "free" }); save(); render();
+            const activation = state.freeSpinSession?.ally?.lastActivation;
+            const alreadyPresented = done.allyReplay || done.allyEffect?.allyId === "ryan";
+            if (!alreadyPresented && activation?.activated) await presentAllyCallout(activation);
           } else break;
           if (state.freeSpinSession?.status === FS.READY) await app.effects.wait(app.effects.prefersReducedMotion() ? CONFIG.freeSpins.reducedMotionDelay : CONFIG.freeSpins.autoAdvanceDelay);
         }
@@ -190,12 +225,21 @@
   }
   function startFreeSpins() {
     if (!app.freeSpins.canStartFeature(state.freeSpinSession)) return false;
-    ui.clearTriggerTrees(); ui.hideFreeSpinLayer(); state.freeSpinSession.status = FS.READY; setPhase(GAME_STATES.FREE_SPINS, true);
+    state.freeSpinSession = app.allies.beginFeature(state.freeSpinSession);
+    ui.clearTriggerTrees(); ui.hideFreeSpinLayer(); ui.hideAllySelection?.(); state.freeSpinSession.status = FS.READY; setPhase(GAME_STATES.FREE_SPINS, true);
     audio.playFreeSpinStart(); render(); void freeLoop(); return true;
+  }
+  function selectAlly(allyId) {
+    if (!activeSession() || state.freeSpinSession.status !== FS.INTRO) return false;
+    state.freeSpinSession = app.allies.setPendingSelection(state.freeSpinSession, allyId); save(); ui.showAllySelection(state.freeSpinSession); render(); return true;
+  }
+  function confirmAlly() {
+    if (!activeSession() || state.freeSpinSession.status !== FS.INTRO || !state.freeSpinSession.ally?.selectedId) return false;
+    state.freeSpinSession = app.allies.confirmSelection(state.freeSpinSession); save(); ui.hideAllySelection(); void showIntro(); return true;
   }
   function continueSummary() {
     if (phase !== GAME_STATES.BONUS || !activeSession() || ![FS.SUMMARY, FS.COMPLETE].includes(state.freeSpinSession.status)) return false;
-    ui.hideFreeSpinLayer(); state.freeSpinSession = null; state.lastWin = 0; setPhase(GAME_STATES.IDLE, true);
+    ui.hideFreeSpinLayer(); ui.hideAllySelection?.(); ui.hideAllyCallout?.(); state.freeSpinSession = null; state.lastWin = 0; setPhase(GAME_STATES.IDLE, true);
     ui.showMessage("Choose a bet and spin."); ui.setControlsDisabled(false, state); render(); return true;
   }
   function requestStop() {
@@ -221,6 +265,7 @@
     ui.elements.soundButton.addEventListener("click", () => { state.sound = !state.sound; save(); render(); if (state.sound) audio.playButtonTone(); });
     ui.elements.helpButton.addEventListener("click", ui.openHelp); ui.elements.closeHelp.addEventListener("click", ui.closeHelp);
     ui.elements.helpModal.addEventListener("click", event => { if (event.target === ui.elements.helpModal) ui.closeHelp(); });
+    ui.bindAllySelection?.({ onSelect: selectAlly, onConfirm: confirmAlly });
     document.addEventListener("keydown", event => {
       if (ui.isHelpOpen()) { if (event.key === "Escape") ui.closeHelp(); return; }
       if ((event.code === "Space" || event.key === "Enter") && !event.repeat) { event.preventDefault(); primary(); }
@@ -236,6 +281,6 @@
     setPhase(GAME_STATES.FREE_SPINS, true); void freeLoop();
   }
   async function init() { ui.buildPaytable(); ui.buildCombinationReference(); bind(); await reels.buildReels(); await recover(); render(); }
-  app.game = { spin: paidSpin, handlePrimaryAction: primary, requestManualStop: requestStop, skipCelebration: skip, startFreeSpins, continueFromSummary: continueSummary, adjustBet: bet, refill, getState: () => structuredClone(state), getPhase: () => phase, getManualStopState: () => reels.getManualStopState(), getSessionStatistics: statistics.snapshot };
+  app.game = { spin: paidSpin, handlePrimaryAction: primary, requestManualStop: requestStop, skipCelebration: skip, startFreeSpins, selectAlly, confirmAlly, continueFromSummary: continueSummary, adjustBet: bet, refill, getState: () => structuredClone(state), getPhase: () => phase, getManualStopState: () => reels.getManualStopState(), getSessionStatistics: statistics.snapshot };
   void init();
 })();
