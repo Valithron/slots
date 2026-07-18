@@ -21,7 +21,7 @@
     onReelStop: (index, options) => app.effects.reelImpact(ui.elements.machine, ui.elements.reelFrame, index, options),
     onAnticipation: (level, active) => {
       ui.setAnticipation(level, active);
-      app.effects.setAnticipation(level, active);
+      app.effects.setAnticipation(ui.elements.machine, reels.getReelElements(), level, active);
       if (active) audio.playAnticipation(level);
     },
     onManualStopStateChange: value => { manualStops = value; render(); },
