@@ -268,8 +268,10 @@
     ui.bindAllySelection?.({ onSelect: selectAlly, onConfirm: confirmAlly });
     document.addEventListener("keydown", event => {
       if (ui.isHelpOpen()) { if (event.key === "Escape") ui.closeHelp(); return; }
-      if ((event.code === "Space" || event.key === "Enter") && !event.repeat) { event.preventDefault(); primary(); }
-      else if (event.key === "ArrowLeft") bet(-1); else if (event.key === "ArrowRight") bet(1);
+      const interactive = event.target?.closest?.("button, input, select, textarea, a[href]");
+      if ((event.code === "Space" || event.key === "Enter") && !event.repeat && !interactive) { event.preventDefault(); primary(); }
+      else if (!interactive && event.key === "ArrowLeft") bet(-1);
+      else if (!interactive && event.key === "ArrowRight") bet(1);
     });
   }
   async function recover() {
