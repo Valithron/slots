@@ -3,79 +3,36 @@
 await import("../js/config.js");
 await import("../js/combination-clarity-config.js");
 await import("../js/ally-config.js");
+await import("../js/reactions.js");
+await import("../js/free-spins.js");
+await import("../js/allies.js");
+await import("../js/payouts.js");
+await import("../js/combination-clarity-payouts.js");
+await import("../js/ally-payouts.js");
 
 const app = globalThis.CommuneFortune;
-const { CONFIG } = app;
-const WIN_TIERS = Object.freeze({ NONE: "none", SMALL: "small", NICE: "nice", BIG: "big", JACKPOT: "jackpot" });
+const { CONFIG, payouts } = app;
+const getTotalBet = localState => payouts.getTotalBet(localState);
 
-function getLineBet(localState) { return CONFIG.lineBets[localState.lineBetIndex]; }
-function getTotalBet(localState) { return getLineBet(localState) * CONFIG.paylines.length; }
-function matrixFromStops(stops) {
-  return Array.from({ length: CONFIG.rowCount }, (_, row) => CONFIG.reels.map((reel, reelIndex) => reel[(stops[reelIndex] + row) % reel.length]));
-}
-function evaluateLine(keys) {
-  const wild = CONFIG.expandingWild.symbolKey;
-  if (keys.every(key => key === wild)) return { symbolKey: wild, multiplier: CONFIG.symbols[wild].payout };
-  const target = keys.find(key => key !== wild);
-  return target && keys.every(key => key === target || key === wild) ? { symbolKey: target, multiplier: CONFIG.symbols[target].payout } : null;
-}
-function evaluateWins(matrix, localState) {
-  const lineBet = getLineBet(localState);
-  return CONFIG.paylines.flatMap((rows, lineIndex) => {
-    const keys = rows.map((row, reel) => matrix[row][reel]);
-    const match = evaluateLine(keys);
-    return match ? [{ lineIndex, rows, keys, ...match, payout: match.multiplier * lineBet }] : [];
-  });
-}
-function classifyWinTier(total, referenceBet) {
-  if (total === 0) return WIN_TIERS.NONE;
-  const multiple = total / referenceBet;
-  if (multiple >= CONFIG.winTiers.thresholds.jackpot) return WIN_TIERS.JACKPOT;
-  if (multiple >= CONFIG.winTiers.thresholds.big) return WIN_TIERS.BIG;
-  if (multiple >= CONFIG.winTiers.thresholds.nice) return WIN_TIERS.NICE;
-  return WIN_TIERS.SMALL;
-}
-function canonical(values) { return [...values].sort().join("|"); }
-function detectCombination(matrix) {
-  const full = CONFIG.combinations.fullCommune;
-  const flat = matrix.flat();
-  const centerTree = matrix[CONFIG.expandingWild.rowIndex][CONFIG.expandingWild.reelIndex] === CONFIG.expandingWild.symbolKey;
-  if (centerTree && full.requiredCharacters.every(key => flat.includes(key))) return full;
-  const row = matrix[CONFIG.combinations.communeRow];
-  return CONFIG.combinations.definitions.find(def => canonical(def.members) === canonical(row)) || null;
-}
 function createSpinResult({ targetStops, localState, roll, fortune = false, spinType = "paid", totalAwardedSpins = 4 }) {
-  const referenceBet = getTotalBet(localState);
-  const originalMatrix = matrixFromStops(targetStops);
-  const eligible = originalMatrix[CONFIG.expandingWild.rowIndex][CONFIG.expandingWild.reelIndex] === CONFIG.expandingWild.symbolKey;
-  const activated = eligible && CONFIG.expandingWild.activatingRolls.includes(roll);
-  const resolvedMatrix = originalMatrix.map(row => [...row]);
-  if (activated) for (let row = 0; row < CONFIG.rowCount; row += 1) resolvedMatrix[row][CONFIG.expandingWild.reelIndex] = CONFIG.expandingWild.symbolKey;
-  const baseLineWins = evaluateWins(originalMatrix, localState);
-  const lineWins = evaluateWins(resolvedMatrix, localState);
-  const combination = detectCombination(originalMatrix);
-  const combinationWinTotal = combination ? combination.multiplier * (combination.payoutType === "totalBet" ? referenceBet : getLineBet(localState)) : 0;
-  const baseLineWinTotal = baseLineWins.reduce((sum, win) => sum + win.payout, 0);
-  const lineWinTotal = lineWins.reduce((sum, win) => sum + win.payout, 0);
-  const preModifierWin = lineWinTotal + combinationWinTotal;
-  const fortuneBonus = fortune ? Math.floor(preModifierWin * CONFIG.fortuneMeter.multiplier) - preModifierWin : 0;
-  const totalWin = preModifierWin + fortuneBonus;
-  const reelsWithTree = new Set();
-  originalMatrix.forEach(row => row.forEach((key, reel) => { if (key === CONFIG.freeSpins.triggerSymbolKey) reelsWithTree.add(reel); }));
-  const triggered = reelsWithTree.size === CONFIG.reels.length;
-  const requested = spinType === "free" ? CONFIG.freeSpins.retriggerAward : CONFIG.freeSpins.startingAward;
-  const awardedSpins = triggered ? Math.min(requested, CONFIG.freeSpins.maximumAwardedSpins - totalAwardedSpins) : 0;
-  const naturalWinTier = classifyWinTier(preModifierWin, referenceBet);
-  const gains = CONFIG.fortuneMeter.gains;
-  const tierPoints = naturalWinTier === WIN_TIERS.SMALL ? gains.smallWin : naturalWinTier === WIN_TIERS.NICE ? gains.niceWin : naturalWinTier === WIN_TIERS.BIG ? gains.bigWin : 0;
-  const comboPoints = combination ? (combination.id === CONFIG.combinations.fullCommune.id ? gains.fullCommune : gains.combination) : 0;
-  return {
-    baseLineWinTotal, lineWinTotal, combinationWinTotal, preModifierWin, totalWin, fortuneBonus, naturalWinTier,
-    featureRolls: { expandingWild: { eligible, activated, roll: eligible ? roll : null } },
-    combinationWins: combination ? [{ id: combination.id }] : [],
-    freeSpinTrigger: { triggered, awardedSpins, retrigger: spinType === "free" },
-    fortuneMeterAward: { totalPoints: spinType === "paid" ? gains.paidSpin + tierPoints + comboPoints : 0, jackpotCharge: naturalWinTier === WIN_TIERS.JACKPOT },
+  const simulationState = {
+    ...localState,
+    fortuneMeter: fortune
+      ? { value: CONFIG.fortuneMeter.capacity, charged: true }
+      : { value: 0, charged: false },
+    freeSpinSession: null,
   };
+  return payouts.createSpinResult({
+    targetStops,
+    state: simulationState,
+    id: `exact-${targetStops.join("-")}-${roll}-${spinType}-${fortune ? "fortune" : "natural"}`,
+    createdAt: "exact-simulation",
+    spinType,
+    referenceBet: getTotalBet(localState),
+    totalAwardedSpins,
+    featureRolls: { expandingWild: { roll } },
+    allyBypass: true,
+  });
 }
 const args = new Map(process.argv.slice(2).map(arg => {
   const [key, value = true] = arg.replace(/^--/, "").split("=");
