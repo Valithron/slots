@@ -11,14 +11,24 @@ class Param {
   constructor(value = 0) { this.value = value; }
   setValueAtTime(value) { this.value = value; }
   cancelScheduledValues() {}
+  exponentialRampToValueAtTime(value) { this.value = value; }
 }
 class Gain { constructor() { this.gain = new Param(1); } connect() { return this; } }
-class Source { connect() { return this; } start() { this.started = true; } stop() { this.stopped = true; this.onended?.(); } }
+class Source {
+  constructor(context) { this.context = context; }
+  connect() { return this; }
+  start() { this.started = true; }
+  stop() { this.stopped = true; this.onended?.(); }
+}
+class Oscillator extends Source {
+  constructor(context) { super(context); this.frequency = new Param(440); this.type = "sine"; }
+}
 class Context {
   constructor() { Context.instances += 1; this.state = "suspended"; this.currentTime = 0; this.destination = {}; this.sampleRate = 44100; }
   createGain() { return new Gain(); }
   createBuffer() { return {}; }
-  createBufferSource() { return new Source(); }
+  createBufferSource() { return new Source(this); }
+  createOscillator() { return new Oscillator(this); }
   async resume() { this.state = "running"; }
   async suspend() { this.state = "suspended"; }
   async decodeAudioData() { return {}; }
@@ -76,8 +86,10 @@ function load(overrides = {}) {
 {
   const { app } = load();
   await app.audio.unlock();
-  assert.equal(await app.audio.play("ui.button"), null, "configured missing assets are harmless");
-  assert.equal(app.audio.getAssets()["ui.button"], "missing");
+  const handle = await app.audio.play("ui.button");
+  assert.ok(handle, "configured events use synthesized fallback when no asset exists");
+  assert.equal(handle.eventId, "ui.button");
+  assert.equal(app.audio.getAssets()["ui.button"], "synthetic-fallback");
   app.audio.stopAll();
   assert.equal(app.audio.getStatus().activeHandles, 0);
 }
