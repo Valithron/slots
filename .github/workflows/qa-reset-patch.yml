@@ -1,0 +1,53 @@
+name: Apply QA reset queue fix
+
+on:
+  push:
+    branches:
+      - feature/choose-your-ally
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'Add temporary QA reset patch workflow'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/choose-your-ally
+      - name: Patch QA reset and remove temporary workflow
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('js/game-engine.js')
+          text = path.read_text()
+          old = '''  function qaResetFeature() {
+            app.qa.cancelWait(); aborter?.abort(); clearPresentation();
+            state.pendingSpin = null; state.freeSpinSession = null; state.lastWin = 0; currentResult = null; manualStops = null;
+            setPhase(GAME_STATES.IDLE, true);
+            globalThis.location.reload();
+            return { ok: true, message: "Feature state cleared." };
+          }
+          '''
+          new = '''  function qaResetFeature() {
+            app.qa.cancelWait(); aborter?.abort(); clearPresentation();
+            state.pendingSpin = null; state.freeSpinSession = null; state.lastWin = 0; currentResult = null; manualStops = null;
+            setPhase(GAME_STATES.IDLE, true);
+            try { globalThis.sessionStorage?.removeItem("commune-fortune-ally-qa-v1"); } catch {}
+            globalThis.location.reload();
+            return { ok: true, message: "Feature state and queued QA outcomes cleared." };
+          }
+          '''
+          if old not in text:
+              raise SystemExit('QA reset block did not match the expected branch content')
+          path.write_text(text.replace(old, new, 1))
+          Path('.github/workflows/qa-reset-patch.yml').unlink()
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/game-engine.js .github/workflows/qa-reset-patch.yml
+          git commit -m "Clear queued QA outcomes on reset"
+          git push origin HEAD:feature/choose-your-ally
