@@ -387,8 +387,43 @@
     return applyPayoutModifiers(base, options.mysteryModifiers, options.state, featureFlags);
   }
 
+  function inspectPersistentReward(result) {
+    const tokenCount = countTokens(result?.originalMatrix).count;
+    const mysteryAward = result?.mysteryAward;
+    const mysteryMechanicalReward = tokenCount >= 2
+      || floor(mysteryAward?.fortunePoints) > 0
+      || floor(mysteryAward?.freeSpinsRequested) > 0
+      || Boolean(mysteryAward?.modifier);
+    const naturalFreeSpinAward = Boolean(result?.freeSpinTrigger?.triggered
+      && floor(result.freeSpinTrigger.awardedSpins) > 0);
+    const fortuneBurstPoints = floor(result?.fortuneBurstPoints);
+    const explicitPersistentAward = Boolean(
+      result?.persistentFeatureAward
+      || result?.persistentAward
+      || result?.featureAward?.persistent === true
+      || (Array.isArray(result?.persistentFeatureAwards) && result.persistentFeatureAwards.length > 0)
+      || (Array.isArray(result?.featureAwards) && result.featureAwards.some(award => award?.persistent !== false))
+    );
+    return {
+      tokenCount,
+      mysteryMechanicalReward,
+      naturalFreeSpinAward,
+      fortuneBurstPoints,
+      explicitPersistentAward,
+      meaningful: mysteryMechanicalReward || naturalFreeSpinAward || fortuneBurstPoints > 0 || explicitPersistentAward,
+    };
+  }
+
+  function isTrulyBlankResult(result) {
+    return floor(result?.totalWin) <= 0 && !inspectPersistentReward(result).meaningful;
+  }
+
   function coherentRescueResult(original, replacements, selected) {
     const chosen = selected === "original" ? original : replacements.at(-1);
+    const originalReward = inspectPersistentReward(original);
+    const replacementRewards = replacements.map(inspectPersistentReward);
+    const selectedReward = inspectPersistentReward(chosen);
+    const stoppedOnMeaningfulReward = floor(chosen.totalWin) <= 0 && selectedReward.meaningful;
     return {
       ...clone(chosen),
       id: original.id,
@@ -400,8 +435,19 @@
         replacementResults: clone(replacements),
         selected,
         selectedResultId: chosen.id,
-        rescued: original.totalWin === 0 && chosen.totalWin > 0,
-        expiredUnused: replacements.length === 0 && original.totalWin > 0,
+        rescued: isTrulyBlankResult(original) && !isTrulyBlankResult(chosen),
+        expiredUnused: replacements.length === 0 && !isTrulyBlankResult(original),
+        stopReason: floor(chosen.totalWin) > 0
+          ? "coin-win"
+          : stoppedOnMeaningfulReward
+            ? "meaningful-non-coin-reward"
+            : replacements.length > 0 ? "attempts-exhausted" : "original-kept",
+        originalBlank: isTrulyBlankResult(original),
+        selectedMeaningfulReward: clone(selectedReward),
+        candidateRewards: {
+          original: clone(originalReward),
+          replacements: clone(replacementRewards),
+        },
       },
       settlementStatus: "pending",
     };
@@ -450,7 +496,7 @@
     const replacements = [];
     let selected = "original";
     let current = original;
-    for (let attempt = 0; attempt < attemptsAllowed && current.totalWin === 0; attempt += 1) {
+    for (let attempt = 0; attempt < attemptsAllowed && isTrulyBlankResult(current); attempt += 1) {
       const forcedStops = options.mysteryRescueStops?.[attempt];
       const targetStops = Array.isArray(forcedStops) ? forcedStops : randomStops(rng);
       const replacement = buildCandidate(
@@ -548,6 +594,8 @@
     peekModifierQueue,
     commitSpinStart,
     countTokens,
+    inspectPersistentReward,
+    isTrulyBlankResult,
     chooseModifier,
     createAward,
     applyPayoutModifiers,

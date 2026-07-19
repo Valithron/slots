@@ -79,6 +79,12 @@ function createRawMetrics(allyId, mode, runCycles, runSeed) {
     maximumPaidCyclePayout: 0,
     maximumSinglePayout: 0,
     ryanBoostActivations: 0,
+    rescueResults: 0,
+    rescueAttemptsUsed: 0,
+    rescueProtectedMeaningfulResults: 0,
+    rescueProtectedTwoPlusTokenResults: 0,
+    rescueProtectedTreeResults: 0,
+    rescueProtectedFortuneResults: 0,
     guardTrips: 0,
   };
 }
@@ -116,6 +122,12 @@ function summarize(metrics) {
     averageOverflowMysteryFreeSpinsPerFeature: metrics.overflowMysterySpins / Math.max(1, metrics.features),
     ryanBoostActivationFrequencyPerFeature: metrics.ryanBoostActivations / Math.max(1, metrics.features),
     ryanBoostActivationFrequencyPerAllySpin: metrics.ryanBoostActivations / Math.max(1, metrics.allyFreeSpins),
+    rescueResultCount: metrics.rescueResults,
+    averageRescueAttemptsUsed: metrics.rescueAttemptsUsed / Math.max(1, metrics.rescueResults),
+    rescueMeaningfulRewardProtectionFrequency: metrics.rescueProtectedMeaningfulResults / Math.max(1, metrics.rescueResults),
+    rescueProtectedTwoPlusTokenResults: metrics.rescueProtectedTwoPlusTokenResults,
+    rescueProtectedTreeResults: metrics.rescueProtectedTreeResults,
+    rescueProtectedFortuneResults: metrics.rescueProtectedFortuneResults,
   };
 }
 
@@ -196,6 +208,19 @@ function simulateAlly(allyId, { conversionEnabled, runCycles, runSeed }) {
     state.pendingSpin = result;
     const settled = payouts.settlePendingSpinState(state);
     if (!settled) throw new Error(`Unable to settle ${spinType} spin.`);
+
+    const rescueResult = settled.mysteryRescue;
+    if (rescueResult) {
+      metrics.rescueResults += 1;
+      metrics.rescueAttemptsUsed += rescueResult.attemptsUsed || 0;
+      if (rescueResult.stopReason === "meaningful-non-coin-reward") {
+        metrics.rescueProtectedMeaningfulResults += 1;
+        const reward = rescueResult.selectedMeaningfulReward || {};
+        if ((reward.tokenCount || 0) >= 2) metrics.rescueProtectedTwoPlusTokenResults += 1;
+        if (reward.naturalFreeSpinAward) metrics.rescueProtectedTreeResults += 1;
+        if ((reward.fortuneBurstPoints || 0) > 0) metrics.rescueProtectedFortuneResults += 1;
+      }
+    }
 
     const endBonus = settled.allyEndBonus?.amount || 0;
     const paidAmount = settled.totalWin + endBonus;
@@ -325,7 +350,7 @@ const report = {
   allyCycles,
   seed,
   wager,
-  note: "Before mode uses the same production math with in-feature conversion disabled, so Mystery Free Spins wait until after the Ally feature. After mode converts them into the active Ally session up to the twenty-spin cap.",
+  note: "Before mode uses the same production math with in-feature conversion disabled, so Mystery Free Spins wait until after the Ally feature. After mode converts them into the active Ally session up to the twenty-spin cap. Both modes use the corrected Rescue rule that preserves coin wins and meaningful persistent non-coin rewards.",
   before,
   after,
   overall: {
@@ -361,6 +386,8 @@ if (outputJson) {
   console.log(`\nOverall zero-pay: ${percentage(report.overall.before.zeroPayFeatureFrequency)} before → ${percentage(report.overall.after.zeroPayFeatureFrequency)} after`);
   console.log(`Overall RTP: ${percentage(report.overall.before.rtp)} before → ${percentage(report.overall.after.rtp)} after`);
   console.log(`Ryan RTP: ${percentage(report.ryan.beforeRtp)} before → ${percentage(report.ryan.afterRtp)} after; boost activation ${percentage(report.ryan.afterBoostActivationFrequency)} per feature`);
+  const protectedCount = afterRows.reduce((sum, row) => sum + row.rescueProtectedTwoPlusTokenResults + row.rescueProtectedTreeResults + row.rescueProtectedFortuneResults, 0);
+  console.log(`Rescue preserved meaningful non-coin outcomes across after-mode Ally runs: ${protectedCount.toLocaleString()} classified outcomes.`);
 }
 
 if (check) {

@@ -75,8 +75,10 @@ All queued modifiers apply together to the next eligible paid, Mystery, or Ally 
 | Spotlight | The selected character's line wins pay 2x, upgrading to 3x and 4x. Tree Wilds completing that character's line benefit. |
 | Center Tree | The center cell becomes a Tree Wild before line evaluation unless it is already a Tree or Mystery Token. It never creates a natural Three Trees trigger. |
 | Double Commune | Named Commune combinations, including Full Commune, pay 2x, upgrading to 3x and 4x. Ordinary line wins are unchanged. |
-| Rescue Spin | A total loss rerolls once, or twice when stacked. Only the final coherent result settles. |
+| Rescue Spin | Rerolls only a truly blank zero-coin result. It stops on a coin win, 2+ Mystery Tokens, natural Three Trees, Fortune Burst, or another persistent mechanical award. One-token shimmer may still reroll. |
 | Fortune Burst | Adds +20 Fortune after a win or +10 after a loss per stack, capped at three stacks. |
+
+Rescue Spin defines **blank** as zero coins and no persistent mechanical reward. A result with 2+ Mystery Tokens, Mystery Fortune, a queued modifier award, Mystery or Ally spins, a natural trigger or retrigger, Fortune Burst, or another persistent feature award is kept and settled. Stacked Rescue attempts stop at the first candidate with either coins or a meaningful non-coin reward. One Mystery Token remains presentation-only and may still be rerolled.
 
 Mystery Free Spins outside an Ally feature remain ordinary zero-cost base-game spins. During an active Commune Ally feature, a 3-Token or 4+-Token free-spin award instead extends the same Ally session immediately. The selected Ally, locked line bet, reference bet, accumulated feature state, modifier queue, automatic progression, and exactly-once settlement are preserved. Natural Three Trees retriggers and Mystery extensions stack. Only overflow beyond the twenty-spin Ally cap is preserved as ordinary Mystery Free Spins for after the summary.
 

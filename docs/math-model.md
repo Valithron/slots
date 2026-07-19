@@ -128,7 +128,7 @@ The multiplier applies to named Commune combinations and Full Commune. It does n
 attempts = min(2, stacks)
 ```
 
-Rerolls stop as soon as a replacement wins. If the original wins, Rescue expires unused. Settlement sees only the selected coherent result, so abandoned losses cannot award coins, Fortune, tokens, combinations, or Three Trees.
+Rescue rerolls only a truly blank result: zero coins and no persistent mechanical award. It stops immediately on a coin win, 2+ Mystery Tokens, natural Three Trees trigger or retrigger, Fortune Burst, or another persistent feature award. One Mystery Token is presentation-only and may still count as blank. Stacked attempts inspect each authoritative candidate in order and stop at the first nonblank candidate. Settlement still sees one coherent selected result, and reload cannot duplicate its coins, Fortune, modifier, Mystery/Ally spins, or trigger.
 
 ### Fortune Burst
 

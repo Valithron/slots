@@ -84,3 +84,7 @@ node tools/simulate-mystery-scatter.mjs --cycles=500000 --ally-cycles=100000 --s
 ```
 
 The JSON report includes RTP by Ally before and after, average Ally spins, Mystery-added spins, extension frequency, multiple-extension frequency, average feature payout, zero-pay frequency, maximum feature length and payout, natural retrigger frequency, combined retrigger-plus-extension frequency, cap and overflow frequency, and Ryan boost activation frequency.
+
+## Rescue Spin blank-result boundary
+
+Rescue Spin now rerolls only a truly blank zero-coin result. Two or more Mystery Tokens, a natural Three Trees trigger or retrigger, Fortune Burst, and any other persistent mechanical feature award make the candidate nonblank and preserve it. One Mystery Token remains presentation-only and may still reroll. Stacked Rescue attempts stop on the first coin win or meaningful non-coin reward, and the selected coherent result remains reload-safe and exactly-once.

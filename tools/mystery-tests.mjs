@@ -321,40 +321,124 @@ function communeRules() {
 }
 
 function rescueRules() {
-  const spinState = state();
-  mystery.queueModifier(spinState, { id: "rescue-spin", stacks: 2 });
-  const result = make(twoTokenLoss, {
-    spinState,
-    id: "rescue-authoritative",
-    modifiers: mystery.peekModifierQueue(spinState),
-    rescueStops: [twoTokenLoss, zeroTokenWin],
-    rescueRolls: [
-      { expandingWild: { roll: 1 } },
-      { expandingWild: { roll: 1 } },
-    ],
-  });
-  assert.equal(result.mysteryRescue.attemptsAllowed, 2);
-  assert.equal(result.mysteryRescue.attemptsUsed, 2);
-  assert.equal(result.mysteryRescue.selected, "replacement");
-  assert.equal(result.mysteryRescue.rescued, true);
-  assert.equal(result.targetStops.join(","), zeroTokenWin.join(","));
-  assert.equal(result.mysteryTokenCount, 0, "the abandoned two-token loss must not award its tokens");
-  assert.equal(result.fortuneMeterAward.mysteryTokenPoints, 0);
-  assert.equal(result.mysteryRescue.originalResult.mysteryAward, undefined);
-  const before = spinState.coins;
-  const done = settle(spinState, result);
-  assert.equal(spinState.coins, before - result.coinCost + result.totalWin);
-  assert.equal(spinState.mystery.modifierQueue.length, 0);
-  assert.equal(payouts.settlePendingSpinState(spinState), null, "Rescue result must settle exactly once");
-  assert.equal(mystery.applyMysterySettlement(spinState, done).duplicate, true, "Mystery awards are idempotent after settlement");
+  const rescue = [{ id: "rescue-spin", stacks: 2 }];
+  const rescueRolls = [
+    { expandingWild: { roll: 1 } },
+    { expandingWild: { roll: 1 } },
+  ];
 
-  const unused = make(zeroTokenWin, {
-    id: "rescue-unused",
-    modifiers: [{ id: "rescue-spin", stacks: 2 }],
-    rescueStops: [twoTokenLoss, twoTokenLoss],
+  const originalTwo = make(twoTokenLoss, {
+    id: "rescue-keeps-original-two-tokens",
+    modifiers: rescue,
+    rescueStops: [zeroTokenWin, zeroTokenWin],
+    rescueRolls,
+    awardModifier: "center-tree",
   });
-  assert.equal(unused.mysteryRescue.attemptsUsed, 0);
-  assert.equal(unused.mysteryRescue.expiredUnused, true);
+  assert.equal(originalTwo.totalWin, 0);
+  assert.equal(originalTwo.mysteryRescue.attemptsUsed, 0);
+  assert.equal(originalTwo.mysteryRescue.selected, "original");
+  assert.equal(originalTwo.mysteryRescue.stopReason, "meaningful-non-coin-reward");
+  assert.equal(originalTwo.mysteryTokenCount, 2);
+  assert.equal(originalTwo.mysteryAward.fortunePoints, CONFIG.mystery.rewards.twoTokenFortune);
+  assert.equal(originalTwo.mysteryAward.modifier.id, "center-tree");
+
+  const replacementTwo = make(zeroTokenLoss, {
+    id: "rescue-stops-on-replacement-two-tokens",
+    modifiers: rescue,
+    rescueStops: [twoTokenLoss, zeroTokenWin],
+    rescueRolls,
+    awardModifier: "center-tree",
+  });
+  assert.equal(replacementTwo.mysteryRescue.attemptsUsed, 1);
+  assert.equal(replacementTwo.mysteryRescue.replacementResults.length, 1);
+  assert.equal(replacementTwo.mysteryRescue.selected, "replacement");
+  assert.equal(replacementTwo.mysteryRescue.stopReason, "meaningful-non-coin-reward");
+  assert.equal(replacementTwo.mysteryTokenCount, 2);
+  assert.equal(replacementTwo.targetStops.join(","), twoTokenLoss.join(","));
+
+  const three = make(stops[3], {
+    id: "rescue-keeps-three-token-award",
+    modifiers: rescue,
+    rescueStops: [zeroTokenWin, zeroTokenWin],
+    rescueRolls,
+  });
+  assert.equal(three.mysteryRescue.attemptsUsed, 0);
+  assert.equal(three.mysteryTokenCount, 3);
+  assert.equal(three.mysteryAward.freeSpinsRequested, CONFIG.mystery.rewards.threeTokenFreeSpins);
+
+  const four = make(stops[4], {
+    id: "rescue-keeps-four-token-award",
+    modifiers: rescue,
+    rescueStops: [zeroTokenWin, zeroTokenWin],
+    rescueRolls,
+  });
+  assert.equal(four.mysteryRescue.attemptsUsed, 0);
+  assert.ok(four.mysteryTokenCount >= 4);
+  assert.equal(four.mysteryAward.freeSpinsRequested, CONFIG.mystery.rewards.fourPlusFreeSpins);
+
+  const zeroWinTriggerStops = findStops(result => result.totalWin === 0
+    && result.mysteryTokenCount === 0
+    && result.freeSpinTrigger?.triggered
+    && result.freeSpinTrigger.awardedSpins > 0).targetStops;
+  const trigger = make(zeroWinTriggerStops, {
+    id: "rescue-keeps-natural-three-trees",
+    modifiers: rescue,
+    rescueStops: [zeroTokenWin, zeroTokenWin],
+    rescueRolls,
+  });
+  assert.equal(trigger.totalWin, 0);
+  assert.equal(trigger.mysteryRescue.attemptsUsed, 0);
+  assert.equal(trigger.mysteryRescue.stopReason, "meaningful-non-coin-reward");
+  assert.equal(trigger.freeSpinTrigger.triggered, true);
+
+  const blank = make(zeroTokenLoss, {
+    id: "rescue-rerolls-truly-blank-results",
+    modifiers: rescue,
+    rescueStops: [zeroTokenLoss, zeroTokenWin],
+    rescueRolls,
+  });
+  assert.equal(blank.mysteryRescue.attemptsUsed, 2);
+  assert.equal(blank.mysteryRescue.selected, "replacement");
+  assert.equal(blank.mysteryRescue.stopReason, "coin-win");
+  assert.equal(blank.mysteryRescue.rescued, true);
+  assert.equal(blank.targetStops.join(","), zeroTokenWin.join(","));
+
+  const oneTokenLoss = findStops(result => result.totalWin === 0
+    && result.mysteryTokenCount === 1
+    && !result.freeSpinTrigger?.triggered).targetStops;
+  const one = make(oneTokenLoss, {
+    id: "rescue-may-reroll-one-token-shimmer",
+    modifiers: rescue,
+    rescueStops: [zeroTokenWin],
+    rescueRolls,
+  });
+  assert.equal(one.mysteryRescue.attemptsUsed, 1);
+  assert.equal(one.totalWin > 0, true);
+
+  storage.clear();
+  const reloadState = state();
+  mystery.queueModifier(reloadState, { id: "rescue-spin", stacks: 2 });
+  const reloadResult = make(zeroTokenLoss, {
+    spinState: reloadState,
+    id: "rescue-reload-exactly-once",
+    modifiers: mystery.peekModifierQueue(reloadState),
+    rescueStops: [twoTokenLoss, zeroTokenWin],
+    rescueRolls,
+    awardModifier: "center-tree",
+  });
+  assert.equal(mystery.commitSpinStart(reloadState, reloadResult), true);
+  reloadState.coins -= reloadResult.coinCost;
+  reloadState.lastWin = 0;
+  reloadState.pendingSpin = reloadResult;
+  assert.equal(persistence.saveState(reloadState), true);
+  const restored = persistence.loadState();
+  const done = payouts.settlePendingSpinState(restored);
+  assert.equal(done.mysteryTokenCount, 2);
+  assert.equal(done.mysterySettlement.fortunePoints, CONFIG.mystery.rewards.twoTokenFortune);
+  assert.equal(restored.mystery.modifierQueue[0].id, "center-tree");
+  assert.equal(restored.fortuneMeter.value, done.fortuneMeterAward.totalPoints);
+  assert.equal(payouts.settlePendingSpinState(restored), null, "Recovered Rescue result settles once");
+  assert.equal(mystery.applyMysterySettlement(restored, done).duplicate, true, "Recovered reward cannot duplicate");
 }
 
 function fortuneBurstRules() {
