@@ -1,0 +1,58 @@
+name: Reaction and Mystery Audit
+
+on:
+  push:
+    branches:
+      - feature/reaction-reliability-scatter-balance
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+
+      - name: Run complete test suite
+        run: npm test
+
+      - name: Run exact production simulator
+        run: npm run simulate | tee simulate.txt
+
+      - name: Save exact simulator JSON
+        run: npm run simulate:json > simulate.json
+
+      - name: Run Ally Monte Carlo verification
+        run: npm run simulate:monte-carlo | tee simulate-monte-carlo.txt
+
+      - name: Run 50,000-cycle Mystery audit
+        run: node tools/simulate-mystery-scatter.mjs --cycles=50000 --ally-cycles=50000 --seed=1297634388 | tee mystery-50000.txt
+
+      - name: Save 500,000-cycle Mystery audit JSON
+        run: node tools/simulate-mystery-scatter.mjs --cycles=500000 --ally-cycles=500000 --seed=1297634388 --json > mystery-500000.json
+
+      - name: Upload simulation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reaction-mystery-audit-reports
+          path: |
+            simulate.txt
+            simulate.json
+            simulate-monte-carlo.txt
+            mystery-50000.txt
+            mystery-500000.json
+          if-no-files-found: warn
