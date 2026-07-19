@@ -29,19 +29,31 @@ jobs:
         run: npm install --ignore-scripts
 
       - name: Run complete test suite
-        run: npm test
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee npm-test.txt
 
       - name: Run exact production simulator
-        run: npm run simulate | tee simulate.txt
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run simulate 2>&1 | tee simulate.txt
 
       - name: Save exact simulator JSON
         run: npm run simulate:json > simulate.json
 
       - name: Run Ally Monte Carlo verification
-        run: npm run simulate:monte-carlo | tee simulate-monte-carlo.txt
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run simulate:monte-carlo 2>&1 | tee simulate-monte-carlo.txt
 
       - name: Run 50,000-cycle Mystery audit
-        run: node tools/simulate-mystery-scatter.mjs --cycles=50000 --ally-cycles=50000 --seed=1297634388 | tee mystery-50000.txt
+        shell: bash
+        run: |
+          set -o pipefail
+          node tools/simulate-mystery-scatter.mjs --cycles=50000 --ally-cycles=50000 --seed=1297634388 2>&1 | tee mystery-50000.txt
 
       - name: Save 500,000-cycle Mystery audit JSON
         run: node tools/simulate-mystery-scatter.mjs --cycles=500000 --ally-cycles=500000 --seed=1297634388 --json > mystery-500000.json
@@ -52,6 +64,7 @@ jobs:
         with:
           name: reaction-mystery-audit-reports
           path: |
+            npm-test.txt
             simulate.txt
             simulate.json
             simulate-monte-carlo.txt
