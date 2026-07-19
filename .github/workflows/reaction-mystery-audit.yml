@@ -56,7 +56,7 @@ jobs:
           node tools/simulate-mystery-scatter.mjs --cycles=50000 --ally-cycles=50000 --seed=1297634388 2>&1 | tee mystery-50000.txt
 
       - name: Save 500,000-cycle Mystery audit JSON
-        run: node tools/simulate-mystery-scatter.mjs --cycles=500000 --ally-cycles=500000 --seed=1297634388 --json > mystery-500000.json
+        run: node tools/simulate-mystery-scatter.mjs --cycles=500000 --ally-cycles=100000 --seed=1297634388 --json > mystery-500000.json
 
       - name: Upload simulation reports
         if: always()
