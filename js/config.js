@@ -210,8 +210,8 @@
     },
     reels: [
       ["CYD","GAB","MYS","MYS","COP","CYD","STR","GAB","KEN","TOL","ASH","COP","RYN","CYD","MYS","KEN","ASH","COP","CYD","TOL","STR","GAB","KEN","RYN"],
-      ["MYS","ASH","CYD","KEN","COP","TOL","GAB","STR","MYS","ASH","RYN","COP","GAB","MYS","CYD","TOL","ASH","COP","STR","GAB","CYD","KEN","ASH","RYN"],
-      ["MYS","CYD","COP","GAB","ASH","TOL","MYS","STR","CYD","COP","RYN","MYS","KEN","ASH","CYD","COP","TOL","GAB","STR","KEN","CYD","ASH","COP","RYN"],
+      ["MYS","ASH","CYD","KEN","COP","TOL","GAB","STR","MYS","ASH","RYN","COP","GAB","KEN","CYD","TOL","ASH","COP","STR","GAB","CYD","KEN","ASH","RYN"],
+      ["MYS","CYD","COP","GAB","ASH","TOL","MYS","STR","CYD","COP","RYN","GAB","KEN","ASH","CYD","COP","TOL","GAB","STR","KEN","CYD","ASH","COP","RYN"],
     ],
     reelAnimation: {
       repeatCount: 11, baseCopy: 2, cycles: [3,4,5], durations: [1550,1900,2350], legacyDurations: [1900,2350,2800],
