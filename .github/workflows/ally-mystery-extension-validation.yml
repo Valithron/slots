@@ -1,0 +1,59 @@
+name: Ally Mystery Extension Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Diff hygiene
+        run: git diff --check origin/main...HEAD
+
+      - name: Focused Rescue and Ally tests
+        run: node tools/mystery-tests.mjs && node tools/ally-mystery-extension-tests.mjs
+
+      - name: Automated tests
+        run: npm test
+
+      - name: Exact simulator
+        run: npm run simulate
+
+      - name: Exact simulator JSON
+        run: npm run simulate:json > simulate.json
+
+      - name: Existing Monte Carlo
+        run: npm run simulate:monte-carlo
+
+      - name: Ally Mystery audit, 50k
+        run: node tools/simulate-mystery-scatter.mjs --cycles=50000 --ally-cycles=50000 --seed=1297634388 | tee ally-mystery-50k.txt
+
+      - name: Ally Mystery audit, 500k/100k JSON
+        run: node tools/simulate-mystery-scatter.mjs --cycles=500000 --ally-cycles=100000 --seed=1297634388 --json > ally-mystery-500k.json
+
+      - name: Upload simulation reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ally-mystery-extension-reports
+          path: |
+            simulate.json
+            ally-mystery-50k.txt
+            ally-mystery-500k.json
+          if-no-files-found: ignore

@@ -3,6 +3,8 @@
 
   const app = globalThis.CommuneFortune;
   const { CONFIG, GAME_STATES } = app;
+  const STACKED_QA_SENTINEL = "__qa-natural-retrigger-plus-four-tokens__";
+  const EXTENSION_QA_KEY = "commune-fortune-ally-extension-qa-v1";
 
   function routePrimaryAction({
     phase,
@@ -110,6 +112,58 @@
     return Math.floor(totalWin * (1 - Math.pow(1 - clamped, 3)));
   }
 
+  function installStackedQaResultPath() {
+    if (!app.qa?.enabled || !app.payouts?.createSpinResult || !app.allyMysteryExtensions) return;
+
+    const createSpinResult = app.payouts.createSpinResult;
+    app.payouts.createSpinResult = options => {
+      const syntheticStack = options?.mysteryAwardModifier === STACKED_QA_SENTINEL;
+      const result = createSpinResult(syntheticStack
+        ? { ...options, mysteryAwardModifier: "fortune-burst" }
+        : options);
+      if (!syntheticStack) return result;
+
+      const mysteryAward = app.mystery.createAward(4, {
+        id: result.id,
+        queue: app.mystery.peekModifierQueue(options.state),
+        forcedModifierId: "fortune-burst",
+        rng: options.rng || Math.random,
+      });
+      const withoutOldPlan = {
+        ...result,
+        freeSpinTrigger: {
+          triggered: true,
+          retrigger: true,
+          awardedSpins: CONFIG.freeSpins.retriggerAward,
+          treeCells: [],
+          qaSyntheticStack: true,
+        },
+        mysteryTokenCount: 4,
+        mysteryAward: { ...mysteryAward },
+      };
+      return app.allyMysteryExtensions.attachAllyExtensionPlan(withoutOldPlan, options.state);
+    };
+
+    globalThis.document?.addEventListener?.("DOMContentLoaded", () => {
+      const consumeSpinOverride = app.qa.consumeSpinOverride;
+      app.qa.consumeSpinOverride = options => {
+        let flags = {};
+        try { flags = JSON.parse(globalThis.sessionStorage?.getItem(EXTENSION_QA_KEY) || "{}") || {}; } catch { flags = {}; }
+        if (options?.spinType === "free" && flags.retriggerFour === true) {
+          flags.retriggerFour = false;
+          globalThis.sessionStorage?.setItem(EXTENSION_QA_KEY, JSON.stringify(flags));
+          const match = app.qa.findMysteryCount(4, options);
+          return {
+            ...match,
+            label: "Natural retrigger + 4 Mystery Tokens",
+            mysteryAwardModifier: STACKED_QA_SENTINEL,
+          };
+        }
+        return consumeSpinOverride(options);
+      };
+    }, { once: true });
+  }
+
   app.gameFlow = {
     routePrimaryAction,
     getPrimaryActionMode,
@@ -120,4 +174,6 @@
     getCelebrationDuration,
     getCountUpValue,
   };
+
+  installStackedQaResultPath();
 })();
