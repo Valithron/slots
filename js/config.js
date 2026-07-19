@@ -32,11 +32,11 @@
   });
 
   const characterPresentation = Object.freeze({
-    assetVersion: "portraits-v5",
+    assetVersion: "portraits-v6",
     genericAsset: "assets/symbols/tree-of-life.svg",
     characters: Object.freeze({
       STR: Object.freeze({ name: "Sterling", base: "assets/symbols/sterling.svg", small: "assets/symbols/sterling-small.svg", nice: "assets/symbols/sterling-nice.svg", big: "assets/symbols/sterling-big.svg", accent: "#d3d8e8" }),
-      CYD: Object.freeze({ name: "Cydney", base: "assets/symbols/cydney.svg", small: "assets/symbols/cydney-small.svg", nice: null, big: null, accent: "#86a66a" }),
+      CYD: Object.freeze({ name: "Cydney", base: "assets/symbols/cydney.svg", small: "assets/symbols/cydney-small.svg", nice: "assets/symbols/cydney-nice.svg", big: "assets/symbols/cydney-big.svg", accent: "#86a66a" }),
       RYN: Object.freeze({ name: "Ryan", base: "assets/symbols/ryan.svg", small: "assets/symbols/ryan-small.svg", nice: null, big: null, accent: "#a276ff" }),
       GAB: Object.freeze({ name: "Gabi", base: "assets/symbols/gabi.svg", small: "assets/symbols/gabi-small.svg", nice: null, big: null, accent: "#89d2ff" }),
       COP: Object.freeze({ name: "Cooper", base: "assets/symbols/cooper.svg", small: "assets/symbols/cooper-small.svg", nice: null, big: null, accent: "#e0aa3e" }),
