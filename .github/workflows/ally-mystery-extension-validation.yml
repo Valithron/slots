@@ -9,22 +9,45 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
-      - name: Check out branch
+      - name: Check out feature branch
         uses: actions/checkout@v4
         with:
+          ref: feature/ally-mystery-extensions-mobile-hud
           fetch-depth: 0
 
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Apply pending Rescue patch
+        if: ${{ hashFiles('tools/apply-rescue-blank-rule.py') != '' }}
+        run: |
+          python tools/fix-rescue-patch-anchor.py
+          python tools/apply-rescue-blank-rule.py
+          rm -f tools/fix-rescue-patch-anchor.py
+
+      - name: Focused Rescue and Ally tests
+        run: node tools/mystery-tests.mjs && node tools/ally-mystery-extension-tests.mjs
+
+      - name: Publish applied Rescue patch
+        run: |
+          if git diff --quiet; then
+            echo "No pending patch changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Preserve non-coin Rescue rewards"
+          git push origin HEAD:feature/ally-mystery-extensions-mobile-hud
 
       - name: Diff hygiene
         run: git diff --check origin/main...HEAD
