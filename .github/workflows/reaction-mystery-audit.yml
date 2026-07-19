@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - feature/reaction-reliability-scatter-balance
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
