@@ -129,6 +129,12 @@ app.payouts.createSpinResult = options => {
   return spin(options.id,payout,{ targetStops:[marker,marker,marker], createdAt:"test", naturalWinTier:payout>=25?"nice":payout?"small":"none", originalMatrix:[],resolvedMatrix:[],featureRolls:{},transformations:[],baseLineWins:[],combinationWins:[],baseLineWinTotal:payout,lineWinTotal:payout,combinationWinTotal:0,settlementStatus:"pending" });
 };
 app.payouts.settlePendingSpinState = state => { const pending=state.pendingSpin; if(!pending)return null; state.coins+=pending.totalWin; state.freeSpinSession=app.freeSpins.applyFreeSpinSettlement(state.freeSpinSession,pending).session; state.pendingSpin=null; return {...pending,settlementStatus:"settled"}; };
+app.mystery = {
+  hasQueuedFreeSpin: () => false,
+  commitSpinStart: () => true,
+  queueFreeSpins: () => ({ awarded: 0, capped: false }),
+  getModifierLabel: modifier => modifier?.name || modifier?.id || "Mystery Modifier",
+};
 await import("../js/ally-payouts.js");
 
 {
