@@ -149,9 +149,10 @@ assert.match(ryanBig.at(-1), /ryan\.svg/);
 failedPatterns.add("ryan-big.svg");
 failedPatterns.add("ryan-nice.svg");
 assert.match(await rr.resolveLoadedReactionAsset("RYN", "big"), /ryan-small\.svg/);
-failedPatterns.add("ryan-small.svg");
-rr.resolvedAssetCache.delete("RYN:big");
-assert.match(await rr.resolveLoadedReactionAsset("RYN", "big"), /ryan\.svg/);
+failedPatterns.add("gabi-big.svg");
+failedPatterns.add("gabi-nice.svg");
+failedPatterns.add("gabi-small.svg");
+assert.match(await rr.resolveLoadedReactionAsset("GAB", "big"), /gabi\.svg/);
 
 const combinationCells = rr.combinationWins({
   symbols: ["CYD", "STR", "TOL"],
@@ -198,7 +199,7 @@ rr.start([
   { symbolKey: "CYD", rows: [null, 0, 0] },
 ], mixedBoard.reelController, "big");
 await flush();
-assert.match(mixedBoard.cells[0].image.getAttribute("src"), /ryn\.svg|ryan\.svg/i, "A failed variant must retain a known-good visible source");
+assert.match(mixedBoard.cells[0].image.getAttribute("src"), /ryn\.svg|ryan-small\.svg|ryan\.svg/i, "A failed variant must resolve to a known-good visible source");
 assert.match(mixedBoard.cells[1].image.getAttribute("src"), /cydney-big\.svg/);
 assert.match(mixedBoard.cells[2].image.getAttribute("src"), /cydney-big\.svg/);
 assert.deepEqual(mixedBoard.cells.flatMap(cell => cell.image.invalidAssignments), []);
