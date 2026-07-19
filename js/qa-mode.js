@@ -5,7 +5,7 @@
   const { CONFIG } = app;
   const query = new URLSearchParams(globalThis.location?.search || "");
   const enabled = query.get("qa") === "ally";
-  const STORAGE_KEY = "commune-fortune-ally-qa-v1";
+  const STORAGE_KEY = "commune-fortune-ally-qa-v2";
   const SCENARIOS = Object.freeze({
     "three-trees": Object.freeze({ label: "Three Trees trigger", spinType: "paid", expandingRoll: 1 }),
     loss: Object.freeze({ label: "Clean loss", spinType: "free", expandingRoll: 1 }),
@@ -16,6 +16,8 @@
     retrigger: Object.freeze({ label: "Three Trees retrigger", spinType: "free", expandingRoll: 1 }),
     awakening: Object.freeze({ label: "Tree Awakening", spinType: "free", expandingRoll: 0 }),
     combination: Object.freeze({ label: "Named Commune combination", spinType: "free", expandingRoll: 1 }),
+    "spotlight-win": Object.freeze({ label: "Sterling line for Spotlight", spinType: "free", expandingRoll: 1 }),
+    "center-open": Object.freeze({ label: "Open center cell", spinType: "free", expandingRoll: 1 }),
   });
 
   let controls = null;
@@ -24,6 +26,8 @@
   let snapshotElement = null;
   let scenarioSelect = null;
   let allySelect = null;
+  let mysteryModifierSelect = null;
+  let mysteryFreeSpinInput = null;
   let stepCheckbox = null;
   let waiter = null;
   let stepCredits = 0;
@@ -38,11 +42,15 @@
         queued: {
           paid: typeof parsed?.queued?.paid === "string" ? parsed.queued.paid : null,
           free: typeof parsed?.queued?.free === "string" ? parsed.queued.free : null,
+          "mystery-free": typeof parsed?.queued?.["mystery-free"] === "string" ? parsed.queued["mystery-free"] : null,
         },
+        forcedMysteryCount: [1, 2, 3, 4].includes(parsed?.forcedMysteryCount) ? parsed.forcedMysteryCount : null,
+        forcedMysteryModifier: typeof parsed?.forcedMysteryModifier === "string" ? parsed.forcedMysteryModifier : null,
+        rescueTest: parsed?.rescueTest === true,
         collapsed: Boolean(parsed?.collapsed),
       };
     } catch {
-      return { stepMode: true, queued: { paid: null, free: null }, collapsed: false };
+      return { stepMode: true, queued: { paid: null, free: null, "mystery-free": null }, forcedMysteryCount: null, forcedMysteryModifier: null, rescueTest: false, collapsed: false };
     }
   }
 
@@ -90,6 +98,9 @@
       && result.freeSpinTrigger.awardedSpins > 0);
     if (id === "awakening") return result.transformations?.some(item => item.type === "expanding-wild") && noTrigger;
     if (id === "combination") return result.combinationWins?.length > 0 && noTrigger && noAwakening;
+    if (id === "spotlight-win") return result.lineWins?.some(win => win.symbolKey === "STR") && noTrigger && noAwakening;
+    if (id === "center-open") return ![CONFIG.expandingWild.symbolKey, CONFIG.mystery.symbolKey]
+      .includes(result.originalMatrix?.[CONFIG.expandingWild.rowIndex]?.[CONFIG.expandingWild.reelIndex]) && noTrigger && noAwakening;
     return false;
   }
 
@@ -119,6 +130,8 @@
             totalAwardedSpins,
             featureRolls,
             allyBypass: true,
+            mysteryModifiers: [],
+            mysterySkipRescue: true,
             createdAt: "2000-01-01T00:00:00.000Z",
           });
           if (!matchesScenario(id, result)) continue;
@@ -131,12 +144,47 @@
     throw new Error(`No valid ${definition.label} result exists for the current feature state.`);
   }
 
+  function findMysteryCount(count, {
+    state,
+    spinType = "paid",
+    referenceBet = app.payouts.getTotalBet(state),
+    totalAwardedSpins = state?.freeSpinSession?.totalAwardedSpins || 0,
+  } = {}) {
+    const requested = Math.min(4, Math.max(1, Math.floor(Number(count) || 1)));
+    const key = ["mystery", requested, spinType, state?.lineBetIndex || 0, referenceBet, totalAwardedSpins].join(":");
+    const cached = cache.get(key);
+    if (cached) return structuredClone(cached);
+    for (let first = 0; first < CONFIG.reels[0].length; first += 1) {
+      for (let second = 0; second < CONFIG.reels[1].length; second += 1) {
+        for (let third = 0; third < CONFIG.reels[2].length; third += 1) {
+          const targetStops = [first, second, third];
+          const result = app.payouts.createSpinResult({
+            targetStops,
+            state,
+            id: `qa-probe-mystery-${requested}-${first}-${second}-${third}`,
+            spinType,
+            referenceBet,
+            totalAwardedSpins,
+            featureRolls: { expandingWild: { roll: 1 } },
+            mysteryModifiers: [],
+            allyBypass: true,
+            createdAt: "2000-01-01T00:00:00.000Z",
+          });
+          const matches = requested === 4 ? result.mysteryTokenCount >= 4 : result.mysteryTokenCount === requested;
+          if (!matches) continue;
+          const match = { id: `mystery-${requested}`, label: requested === 4 ? "4+ Mystery Tokens" : `${requested} Mystery Token${requested === 1 ? "" : "s"}`, targetStops, featureRolls: { expandingWild: { roll: 1 } } };
+          cache.set(key, structuredClone(match));
+          return match;
+        }
+      }
+    }
+    throw new Error(`No valid ${requested === 4 ? "4+" : requested}-token result exists for ${spinType}.`);
+  }
+
   function queueScenario(spinType, id) {
     if (!enabled) return false;
     const definition = scenarioDefinition(id);
-    if (definition.spinType !== spinType && !(spinType === "free" && id === "three-trees")) {
-      throw new Error(`${definition.label} is not a ${spinType} scenario.`);
-    }
+    if (!["paid", "free", "mystery-free"].includes(spinType)) throw new Error(`Unknown spin type: ${spinType}`);
     session.queued[spinType] = id;
     persist();
     setStatus(`${definition.label} queued for the next ${spinType === "paid" ? "paid" : "free"} spin.`, "ready");
@@ -147,11 +195,25 @@
   function consumeSpinOverride({ spinType, state, referenceBet, totalAwardedSpins = 0 } = {}) {
     if (!enabled) return null;
     const id = session.queued[spinType];
-    if (!id) return null;
+    const forcedCount = session.forcedMysteryCount;
+    const rescueTest = session.rescueTest;
+    const forcedModifier = session.forcedMysteryModifier;
+    if (!id && !forcedCount && !rescueTest) return null;
     session.queued[spinType] = null;
+    session.forcedMysteryCount = null;
+    session.forcedMysteryModifier = null;
+    session.rescueTest = false;
     persist();
     try {
-      const match = findScenario(id, { state, spinType, referenceBet, totalAwardedSpins });
+      let match = forcedCount
+        ? findMysteryCount(forcedCount, { state, spinType, referenceBet, totalAwardedSpins })
+        : id ? findScenario(id, { state, spinType, referenceBet, totalAwardedSpins }) : null;
+      if (rescueTest) {
+        const loss = findScenario("loss", { state, spinType, referenceBet, totalAwardedSpins });
+        const win = findScenario("small-win", { state, spinType, referenceBet, totalAwardedSpins });
+        match = { ...loss, id: "mystery-rescue", label: "Rescue loss → reroll", mysteryRescueStops: [win.targetStops], mysteryRescueFeatureRolls: [win.featureRolls] };
+      }
+      match.mysteryAwardModifier = forcedModifier;
       setStatus(`${match.label} locked into the real result generator.`, "active");
       updatePanel();
       return match;
@@ -162,12 +224,33 @@
     }
   }
 
+  function forceMysteryCount(count, modifierId = null) {
+    if (!enabled) return false;
+    const requested = Math.min(4, Math.max(1, Math.floor(Number(count) || 1)));
+    session.forcedMysteryCount = requested;
+    session.forcedMysteryModifier = typeof modifierId === "string" ? modifierId : null;
+    persist();
+    setStatus(`${requested === 4 ? "4+" : requested} Mystery Token${requested === 1 ? "" : "s"} forced for the next eligible spin.`, "ready");
+    updatePanel();
+    return true;
+  }
+
+  function forceRescueTest() {
+    if (!enabled) return false;
+    session.rescueTest = true;
+    persist();
+    setStatus("A loss followed by an authoritative winning Rescue reroll is queued.", "ready");
+    updatePanel();
+    return true;
+  }
+
   function recordResolvedResult(result, override) {
     if (!enabled || !override || !result) return;
     const extras = [];
     if (result.freeSpinTrigger?.triggered) extras.push(result.freeSpinTrigger.retrigger ? "retrigger" : "feature trigger");
     if (result.transformations?.length) extras.push("Tree Awakening");
     if (result.combinationWins?.length) extras.push(result.combinationWins[0].name);
+    if (result.mysteryTokenCount) extras.push(`${result.mysteryTokenCount} Mystery Token${result.mysteryTokenCount === 1 ? "" : "s"}`);
     const detail = extras.length ? `, ${extras.join(", ")}` : "";
     setStatus(`${override.label} resolved for ${result.totalWin} coins${detail}.`, "success");
   }
@@ -243,10 +326,11 @@
   function snapshotText(snapshot) {
     if (!snapshot) return "Game initializing…";
     const sessionState = snapshot.freeSpinSession;
-    if (!sessionState?.active) return `Phase: ${snapshot.phase} · No active feature`;
+    const mystery = `Mystery ${snapshot.mystery?.queuedFreeSpins || 0} FS / ${snapshot.mystery?.modifierCount || 0} mods`;
+    if (!sessionState?.active) return `Phase: ${snapshot.phase} · ${mystery} · No active Ally feature`;
     const allyId = sessionState.ally?.selectedId;
     const allyName = allyId ? CONFIG.allies[allyId]?.name : "not selected";
-    return `Phase: ${snapshot.phase} · ${sessionState.remainingSpins} spin${sessionState.remainingSpins === 1 ? "" : "s"} left · Ally: ${allyName}`;
+    return `Phase: ${snapshot.phase} · ${sessionState.remainingSpins} spin${sessionState.remainingSpins === 1 ? "" : "s"} left · Ally: ${allyName} · ${mystery}`;
   }
 
   function updateSnapshot({ state, phase } = {}) {
@@ -254,6 +338,10 @@
     lastSnapshot = {
       phase,
       coins: state?.coins || 0,
+      mystery: {
+        queuedFreeSpins: state?.mystery?.queuedFreeSpins || 0,
+        modifierCount: state?.mystery?.modifierQueue?.length || 0,
+      },
       freeSpinSession: state?.freeSpinSession ? {
         active: Boolean(state.freeSpinSession.active),
         status: state.freeSpinSession.status,
@@ -276,8 +364,9 @@
     if (stepCheckbox) stepCheckbox.checked = session.stepMode;
     const queuedPaid = session.queued.paid ? SCENARIOS[session.queued.paid]?.label : "none";
     const queuedFree = session.queued.free ? SCENARIOS[session.queued.free]?.label : "none";
+    const queuedMystery = session.queued["mystery-free"] ? SCENARIOS[session.queued["mystery-free"]]?.label : "none";
     const queue = panel.querySelector("[data-qa-queue]");
-    if (queue) queue.textContent = `Queued: paid ${queuedPaid}; free ${queuedFree}`;
+    if (queue) queue.textContent = `Queued: paid ${queuedPaid}; Ally ${queuedFree}; Mystery ${queuedMystery}${session.forcedMysteryCount ? `; forced ${session.forcedMysteryCount === 4 ? "4+" : session.forcedMysteryCount} tokens` : ""}`;
   }
 
   function mount() {
@@ -313,6 +402,43 @@
           <button type="button" data-qa-action="run">Run Random Next</button>
         </div>
         <label class="qa-check"><input type="checkbox" data-qa-step checked> Pause before each Free Spin</label>
+        <section class="qa-section">
+          <h3>Mystery QA</h3>
+          <p>These controls use the production result, queue, persistence, and settlement paths.</p>
+          <div class="qa-row qa-row-split">
+            <button type="button" data-qa-action="mystery-1">Force 1 Token</button>
+            <button type="button" data-qa-action="mystery-2">Force 2 Tokens</button>
+          </div>
+          <div class="qa-row qa-row-split">
+            <button type="button" data-qa-action="mystery-3">Force 3 Tokens</button>
+            <button type="button" data-qa-action="mystery-4">Force 4+ Tokens</button>
+          </div>
+          <label class="qa-field">Queue Modifier
+            <select data-qa-mystery-modifier>${CONFIG.mystery.normalModifierPool.map(id => `<option value="${id}">${app.mystery.MODIFIER_NAMES[id]}</option>`).join("")}</select>
+          </label>
+          <button type="button" data-qa-action="mystery-modifier">Queue Selected Modifier</button>
+          <label class="qa-field">Mystery Free Spin Count
+            <input type="number" min="0" max="${CONFIG.mystery.maximumQueuedFreeSpins}" value="1" data-qa-mystery-count>
+          </label>
+          <div class="qa-row qa-row-split">
+            <button type="button" data-qa-action="mystery-set-count">Set Count</button>
+            <button type="button" data-qa-action="mystery-clear">Clear Queue</button>
+          </div>
+          <div class="qa-row qa-row-split">
+            <button type="button" data-qa-action="mystery-rescue">Rescue Loss → Win</button>
+            <button type="button" data-qa-action="mystery-ally">Mystery Spin → Ally</button>
+          </div>
+          <div class="qa-row qa-row-split">
+            <button type="button" data-qa-action="fortune-win">Fortune Burst Win</button>
+            <button type="button" data-qa-action="fortune-loss">Fortune Burst Loss</button>
+          </div>
+          <div class="qa-row qa-row-split">
+            <button type="button" data-qa-action="test-spotlight">Test Spotlight</button>
+            <button type="button" data-qa-action="test-center-tree">Test Center Tree</button>
+          </div>
+          <button type="button" data-qa-action="test-double-commune">Test Double Commune</button>
+          <button type="button" data-qa-action="strong-fallback">Test Strong Fallback</button>
+        </section>
         <button class="qa-danger" type="button" data-qa-action="reset">Reset Feature State</button>
         <p class="qa-status" data-qa-status data-tone="neutral">QA mode ready.</p>
         <p class="qa-note">Remove <code>?qa=ally</code> from the URL for normal play. “Big Win” necessarily includes Three Trees under the current reel math.</p>
@@ -323,6 +449,8 @@
     snapshotElement = wrapper.querySelector("[data-qa-snapshot]");
     scenarioSelect = wrapper.querySelector("[data-qa-scenario]");
     allySelect = wrapper.querySelector("[data-qa-ally]");
+    mysteryModifierSelect = wrapper.querySelector("[data-qa-mystery-modifier]");
+    mysteryFreeSpinInput = wrapper.querySelector("[data-qa-mystery-count]");
     stepCheckbox = wrapper.querySelector("[data-qa-step]");
 
     wrapper.querySelector("[data-qa-collapse]")?.addEventListener("click", () => {
@@ -347,6 +475,18 @@
           setStatus(error.message, "error");
         }
       } else if (action === "run") releaseNextStep();
+      else if (/^mystery-[1-4]$/.test(action)) forceMysteryCount(Number(action.at(-1)));
+      else if (action === "mystery-modifier") invoke("queueMysteryModifier", mysteryModifierSelect?.value);
+      else if (action === "mystery-set-count") invoke("setMysteryFreeSpins", Number(mysteryFreeSpinInput?.value));
+      else if (action === "mystery-clear") invoke("clearMysteryQueue");
+      else if (action === "mystery-rescue") invoke("testMysteryRescue");
+      else if (action === "mystery-ally") invoke("testMysteryAllyTrigger");
+      else if (action === "fortune-win") invoke("testFortuneBurst", "win");
+      else if (action === "fortune-loss") invoke("testFortuneBurst", "loss");
+      else if (action === "test-spotlight") invoke("testMysteryModifier", "spotlight", "spotlight-win");
+      else if (action === "test-center-tree") invoke("testMysteryModifier", "center-tree", "center-open");
+      else if (action === "test-double-commune") invoke("testMysteryModifier", "double-commune", "combination");
+      else if (action === "strong-fallback") forceMysteryCount(4);
       else if (action === "reset") invoke("resetFeature");
     });
     updatePanel();
@@ -356,7 +496,10 @@
     enabled,
     scenarios: SCENARIOS,
     findScenario,
+    findMysteryCount,
     queueScenario,
+    forceMysteryCount,
+    forceRescueTest,
     consumeSpinOverride,
     recordResolvedResult,
     waitForFreeSpinStep,

@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="presentation.css" />
   <link rel="stylesheet" href="feature-presentation.css" />
   <link rel="stylesheet" href="fortune.css" />
+  <link rel="stylesheet" href="mystery.css" />
   <link rel="stylesheet" href="reactions-free-spins.css" />
   <link rel="stylesheet" href="mobile-effects.css" />
   <link rel="stylesheet" href="ally-selection.css" />
@@ -27,7 +28,7 @@
     <section class="machine" id="machine" aria-label="Commune Fortune slot machine">
       <div class="marquee">
         <div class="marquee-title">Commune Fortune</div>
-        <div class="marquee-sub">Five lines · Choose Your Ally · Fortune Spins</div>
+        <div class="marquee-sub">Five lines · Mystery Tokens · Choose Your Ally</div>
       </div>
 
       <div class="status-strip">
@@ -57,9 +58,20 @@
         <div class="fortune-gain" id="fortuneGain" aria-hidden="true"></div>
       </div>
 
+      <div class="mystery-hud" id="mysteryHud" hidden aria-label="Mystery Token status">
+        <div class="mystery-free-counter" id="mysteryFreeCounter" hidden>
+          <span>Mystery Free Spins</span><strong id="mysteryFreeSpinCount">0</strong>
+        </div>
+        <div class="mystery-queue" id="mysteryModifierQueue" hidden>
+          <span class="mystery-queue-label" id="mysteryQueueLabel">Next Spin</span>
+          <div class="mystery-chips" id="mysteryModifierChips"></div>
+        </div>
+      </div>
+
       <div class="stage">
         <div class="reel-frame" id="reelFrame">
           <div class="fortune-spin-badge" id="fortuneSpinBadge" aria-hidden="true"><strong>1.5×</strong><span>Fortune Spin</span></div>
+          <div class="mystery-spin-badge" id="mysterySpinBadge" aria-hidden="true">Mystery Free Spin</div>
           <div class="reel-grid" id="reelGrid" aria-label="Three slot reels"></div>
           <div class="wild-awakening-overlay" id="wildAwakeningOverlay" aria-hidden="true">
             <div class="wild-awakening-light"></div>
@@ -92,6 +104,13 @@
             <div class="fortune-result-row"><span>Natural Win</span><strong id="fortuneNaturalWin">0</strong></div>
             <div class="fortune-result-row bonus"><span>Fortune Bonus</span><strong id="fortuneBonusWin">+0</strong></div>
             <div class="fortune-result-row total"><span>Total Win</span><strong id="fortuneTotalWin">0</strong></div>
+          </div>
+        </div>
+
+        <div class="mystery-callout-layer" id="mysteryCalloutLayer" aria-hidden="true">
+          <div class="mystery-callout-panel" id="mysteryCalloutPanel" role="status">
+            <img src="assets/symbols/scatter.svg?v=mystery-v1" alt="" aria-hidden="true">
+            <div><span id="mysteryCalloutKicker">Mystery Tokens</span><strong id="mysteryCalloutTitle">Mystery Modifier</strong><p id="mysteryCalloutDetail">Queued for the next spin.</p></div>
           </div>
         </div>
 
@@ -185,26 +204,29 @@
       <ul>
         <li>Three matching portraits on a line pay according to the table.</li>
         <li>The silver Tree of Life remains Wild and substitutes for any portrait.</li>
+        <li>Mystery Tokens count anywhere on the visible grid. One shimmers; two give +10 Fortune and a modifier; three give one Mystery Free Spin and a modifier; four or more give two Mystery Free Spins and a strong modifier, with a normal fallback.</li>
+        <li>Mystery Free Spins are normal base-game spins that cost zero coins. They build and can consume Fortune, chain more Mystery Tokens, and can trigger Commune Free Spins.</li>
+        <li>Queued Mystery modifiers stack where shown, apply together to the next eligible paid, Mystery, or Ally spin, then expire.</li>
         <li>A Tree that naturally lands in the exact center cell may awaken and fill the middle reel with Wilds.</li>
         <li>Three natural Trees, one visible on each reel, trigger four Commune Free Spins. Tree Awakening cannot create this trigger.</li>
         <li>Before new Free Spins begin, choose one of seven allies and confirm. The choice cannot change after the feature starts.</li>
         <li>Sterling insures losses; Ryan marks one of the first four spins for 2×; Cooper builds Rage after losses; Cydney echoes 45% of the first win.</li>
         <li>Gabi replays the first weak win below 3× total bet from a win-only pool; Kenly adds 37% to natural Small Wins; Ashley replays the first loss.</li>
         <li>The same natural Three Trees event during the feature retriggers two spins, up to twenty total awarded spins.</li>
-        <li>Free spins use the triggering total bet. They cost no coins and do not build, consume, or multiply with Fortune.</li>
+        <li>Ally Free Spins use the triggering total bet and ordinarily isolate Fortune. Explicit Mystery Token Fortune and Fortune Burst still add to the meter.</li>
         <li>All ally calculations use integer coins and round down. Replays are predetermined and settle only the accepted result.</li>
         <li>Tree Awakening, Commune combinations, all five paylines, character reactions, and manual reel stopping remain active during free spins.</li>
         <li>Named combinations trigger when the required three symbols appear in any order across the middle Commune Line.</li>
         <li>Top and bottom rows, vertical columns, diagonals, and other paylines do not trigger named combinations.</li>
         <li>Full Commune requires all seven members in the grid and the Tree in the exact center cell.</li>
         <li>Every paid spin adds Fortune. Natural wins and Commune combinations add more.</li>
-        <li>At 100 Fortune, the next paid spin becomes a Fortune Spin and multiplies the complete wager-generated win by 1.5×, rounded down.</li>
+        <li>At 100 Fortune, the next paid or Mystery Free Spin becomes a Fortune Spin and multiplies the complete wager-generated win by 1.5×, rounded down.</li>
         <li>A losing Fortune Spin still consumes the charge and begins the next meter cycle.</li>
         <li>While reels move, press Stop, Space, or Enter to request the next reel stop. Reels always stop left to right.</li>
         <li>Manual stopping changes presentation timing only. It cannot change the result, payout, features, or odds.</li>
         <li>Character reactions and ally panels use the current portraits. Missing future variants safely fall back to the base portrait, then the Tree.</li>
         <li>Nice Wins and larger presentations can be skipped with Spin, Enter, or Space.</li>
-        <li>Your fake coin balance, Fortune Meter, pending result, ally choice, free-spin session, feature rolls, and settings save automatically in this browser.</li>
+        <li>Your fake coin balance, Fortune Meter, Mystery tickets and modifiers, pending result, Ally choice, free-spin session, feature rolls, and settings save automatically in this browser.</li>
       </ul>
       <h3 class="combination-reference-heading">Commune combinations</h3>
       <div class="combination-reference" id="combinationReference"></div>
@@ -219,6 +241,7 @@
   <div class="sr-only" id="freeSpinAnnouncer" role="status" aria-live="polite" aria-atomic="true"></div>
   <div class="sr-only" id="allySelectionAnnouncer" role="status" aria-live="polite" aria-atomic="true"></div>
   <div class="sr-only" id="allyCalloutAnnouncer" role="status" aria-live="polite" aria-atomic="true"></div>
+  <div class="sr-only" id="mysteryAnnouncer" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <script src="js/config.js" defer></script>
   <script src="js/combination-clarity-config.js" defer></script>
@@ -232,6 +255,7 @@
   <script src="js/statistics.js" defer></script>
   <script src="js/payouts.js" defer></script>
   <script src="js/combination-clarity-payouts.js" defer></script>
+  <script src="js/mystery.js" defer></script>
   <script src="js/ally-payouts.js" defer></script>
   <script src="js/qa-mode.js" defer></script>
   <script src="js/game-flow.js" defer></script>
@@ -245,6 +269,7 @@
   <script src="js/reactions-free-spins-ui.js" defer></script>
   <script src="js/reel-reactions.js" defer></script>
   <script src="js/ally-ui.js" defer></script>
+  <script src="js/mystery-ui.js" defer></script>
   <script src="js/game-engine.js" defer></script>
 </body>
 </html>

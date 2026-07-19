@@ -45,24 +45,25 @@
     spinType = "paid",
     totalAwardedSpins = 0,
   } = {}) {
+    const retrigger = spinType === "free";
     if (!enabled || !hasTreeOnEveryReel(originalMatrix)) {
       return {
         triggered: false,
         type: "three-trees",
         awardedSpins: 0,
-        retrigger: spinType === "free",
+        retrigger,
         treeCells: [],
         capped: false,
       };
     }
-    const requested = spinType === "free" ? CONFIG.freeSpins.retriggerAward : CONFIG.freeSpins.startingAward;
+    const requested = retrigger ? CONFIG.freeSpins.retriggerAward : CONFIG.freeSpins.startingAward;
     const remainingCapacity = Math.max(0, CONFIG.freeSpins.maximumAwardedSpins - Math.max(0, Math.floor(totalAwardedSpins)));
     const awardedSpins = Math.min(requested, remainingCapacity);
     return {
       triggered: true,
       type: "three-trees",
       awardedSpins,
-      retrigger: spinType === "free",
+      retrigger,
       treeCells: selectTriggerTreeCells(originalMatrix),
       capped: awardedSpins < requested,
     };
@@ -71,7 +72,7 @@
   function createFreeSpinSession(triggerResult, {
     sessionId = createId(),
   } = {}) {
-    if (!triggerResult?.freeSpinTrigger?.triggered || triggerResult.spinType !== "paid") return null;
+    if (!triggerResult?.freeSpinTrigger?.triggered || !["paid", "mystery-free"].includes(triggerResult.spinType)) return null;
     const startingSpins = Math.max(0, Math.floor(triggerResult.freeSpinTrigger.awardedSpins));
     if (startingSpins <= 0) return null;
     return {

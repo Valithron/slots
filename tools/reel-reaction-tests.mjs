@@ -99,6 +99,6 @@ assert.match(source, /JSON\.stringify\(app\.game\.getState\(\)\) !== before/);
 assert.doesNotMatch(source, /\.viewport\.style|reel-strip.*animate|cabinet.*animate|reel-frame.*animate/i);
 assert.ok(index.indexOf("js/reel-reactions.js") > index.indexOf("js/reactions-free-spins-ui.js"));
 assert.ok(index.indexOf("js/reel-reactions.js") < index.indexOf("js/game-engine.js"));
-assert.match(engine, /await spinAnimation\(result\.allyReplay\.originalResult\)[\s\S]*await spinAnimation\(result\.allyReplay\.replacementResult\)/);
+assert.match(engine, /await animateMysteryResult\(result\.allyReplay\.originalResult\)[\s\S]*await animateMysteryResult\(result\.allyReplay\.replacementResult/);
 
 console.log("Reel reaction tests: PASS");

@@ -6,6 +6,7 @@ await import("../js/reactions.js");
 await import("../js/free-spins.js");
 await import("../js/payouts.js");
 await import("../js/combination-clarity-payouts.js");
+await import("../js/mystery.js");
 
 const app = globalThis.CommuneFortune;
 const { CONFIG, payouts, combinationClarity } = app;

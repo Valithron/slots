@@ -19,14 +19,14 @@
     winTiers: true,
     characterReactions: true,
     expandingWilds: true,
-    scatters: false,
+    scatters: true,
     freeSpins: true,
     fortuneMeter: true,
     dailyRewards: false,
     advancedAudio: false,
     manualStops: true,
     riskGame: false,
-    mysteryModifiers: false,
+    mysteryModifiers: true,
     combinationBonuses: true,
     secretEvents: false,
   });
@@ -84,7 +84,8 @@
   });
 
   app.CONFIG = {
-    schemaVersion: 5,
+    schemaVersion: 6,
+    symbolAssetVersion: "mystery-v1",
     startingCoins: 1000,
     rowCount: 3,
     rtpTargets: {
@@ -107,6 +108,31 @@
       maximumAwardedSpins: 20,
       autoAdvanceDelay: 650,
       reducedMotionDelay: 320,
+    },
+    mystery: {
+      symbolKey: "MYS",
+      maximumQueuedFreeSpins: 20,
+      normalModifierPool: ["spotlight", "center-tree", "double-commune", "rescue-spin", "fortune-burst"],
+      strongModifierPool: [],
+      modifierCaps: {
+        spotlight: 3,
+        "center-tree": 1,
+        "double-commune": 3,
+        "rescue-spin": 2,
+        "fortune-burst": 3,
+      },
+      rewards: {
+        twoTokenFortune: 10,
+        threeTokenFreeSpins: 1,
+        fourPlusFreeSpins: 2,
+      },
+      fortuneBurst: { win: 20, loss: 10 },
+      presentation: {
+        shimmerDuration: 520,
+        revealDuration: 760,
+        rescueDuration: 520,
+        reducedMotionDuration: 220,
+      },
     },
     expandingWild: {
       symbolKey: "TOL",
@@ -167,7 +193,7 @@
     characterAccentColors: ["#d3d8e8", "#86a66a", "#a276ff", "#89d2ff", "#e0aa3e", "#65e6cc", "#ff7fba"],
     characterAccentColorMap: {
       STR: "#d3d8e8", CYD: "#86a66a", RYN: "#a276ff", GAB: "#89d2ff",
-      COP: "#e0aa3e", KEN: "#65e6cc", ASH: "#ff7fba", TOL: "#f1d98a",
+      COP: "#e0aa3e", KEN: "#65e6cc", ASH: "#ff7fba", TOL: "#f1d98a", MYS: "#ff405c",
     },
     paylines: [[0,0,0],[1,1,1],[2,2,2],[0,1,2],[2,1,0]],
     lineBets: [1, 2, 5, 10],
@@ -180,22 +206,23 @@
       RYN: { name: "Ryan", payout: 18, image: "assets/symbols/ryan.svg" },
       STR: { name: "Sterling", payout: 25, image: "assets/symbols/sterling.svg" },
       TOL: { name: "Tree of Life Wild", payout: 60, image: "assets/symbols/tree-of-life.svg", wild: true },
+      MYS: { name: "Mystery Scatter Token", payout: 0, image: "assets/symbols/scatter.svg?v=mystery-v1", scatter: true, paysLine: false },
     },
     reels: [
-      ["CYD","GAB","KEN","ASH","COP","CYD","STR","GAB","KEN","TOL","ASH","COP","RYN","CYD","GAB","KEN","ASH","COP","CYD","TOL","STR","GAB","KEN","RYN"],
-      ["GAB","ASH","CYD","KEN","COP","TOL","GAB","STR","CYD","ASH","RYN","COP","GAB","KEN","CYD","TOL","ASH","COP","STR","GAB","CYD","KEN","ASH","RYN"],
-      ["KEN","CYD","COP","GAB","ASH","TOL","KEN","STR","CYD","COP","RYN","GAB","KEN","ASH","CYD","COP","TOL","GAB","STR","KEN","CYD","ASH","COP","RYN"],
+      ["CYD","GAB","MYS","MYS","COP","CYD","STR","GAB","KEN","TOL","ASH","COP","RYN","CYD","MYS","KEN","ASH","COP","CYD","TOL","STR","GAB","KEN","RYN"],
+      ["MYS","ASH","CYD","KEN","COP","TOL","GAB","STR","MYS","ASH","RYN","COP","GAB","MYS","CYD","TOL","ASH","COP","STR","GAB","CYD","KEN","ASH","RYN"],
+      ["MYS","CYD","COP","GAB","ASH","TOL","MYS","STR","CYD","COP","RYN","MYS","KEN","ASH","CYD","COP","TOL","GAB","STR","KEN","CYD","ASH","COP","RYN"],
     ],
     reelAnimation: {
       repeatCount: 11, baseCopy: 2, cycles: [3,4,5], durations: [1550,1900,2350], legacyDurations: [1900,2350,2800],
       finalApproachDuration: 105, stopOvershootRatio: 0.055, settleDuration: 150, impactClassDuration: 260, tickMinimumInterval: 58,
     },
-    paytableOrder: ["KEN", "GAB", "CYD", "ASH", "COP", "RYN", "STR", "TOL"],
+    paytableOrder: ["KEN", "GAB", "CYD", "ASH", "COP", "RYN", "STR", "TOL", "MYS"],
   };
 
   app.GAME_STATES = GAME_STATES;
   app.constants = {
-    storageKey: "commune-fortune-v5",
-    legacyStorageKeys: ["commune-fortune-v4", "commune-fortune-v3", "commune-fortune-v2", "commune-fortune-v1"],
+    storageKey: "commune-fortune-v6",
+    legacyStorageKeys: ["commune-fortune-v5", "commune-fortune-v4", "commune-fortune-v3", "commune-fortune-v2", "commune-fortune-v1"],
   };
 })();

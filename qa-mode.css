@@ -61,7 +61,8 @@
 .qa-row-split > * { flex: 1 1 0; }
 
 .qa-panel button,
-.qa-panel select {
+.qa-panel select,
+.qa-panel input[type="number"] {
   min-height: 38px;
   border: 1px solid rgb(255 255 255 / 0.18);
   border-radius: 9px;
@@ -85,7 +86,8 @@
   font-size: 11px;
 }
 
-.qa-field select { width: 100%; padding: 7px 9px; }
+.qa-field select,
+.qa-field input[type="number"] { width: 100%; padding: 7px 9px; }
 .qa-check { margin: 10px 0; color: #e7e4ef; }
 .qa-check input { width: 18px; height: 18px; margin: 0; }
 .qa-danger { width: 100%; border-color: #ff7777 !important; background: #5f1d25 !important; }

@@ -15,6 +15,7 @@ globalThis.CommuneFortune = {};
   "js/allies.js",
   "js/payouts.js",
   "js/combination-clarity-payouts.js",
+  "js/mystery.js",
   "js/ally-payouts.js",
   "js/qa-mode.js",
 ].forEach(load);
@@ -40,6 +41,8 @@ const contexts = {
   retrigger: { spinType: "free", totalAwardedSpins: 4 },
   awakening: { spinType: "free", totalAwardedSpins: 4 },
   combination: { spinType: "free", totalAwardedSpins: 4 },
+  "spotlight-win": { spinType: "free", totalAwardedSpins: 4 },
+  "center-open": { spinType: "free", totalAwardedSpins: 4 },
 };
 
 const results = {};
@@ -75,6 +78,9 @@ assert.equal(results.retrigger.freeSpinTrigger.retrigger, true);
 assert.ok(results.retrigger.freeSpinTrigger.awardedSpins > 0);
 assert.ok(results.awakening.transformations.some(item => item.type === "expanding-wild"));
 assert.ok(results.combination.combinationWins.length > 0);
+assert.ok(results["spotlight-win"].lineWins.some(win => win.symbolKey === "STR"));
+assert.ok(![app.CONFIG.expandingWild.symbolKey, app.CONFIG.mystery.symbolKey]
+  .includes(results["center-open"].originalMatrix[app.CONFIG.expandingWild.rowIndex][app.CONFIG.expandingWild.reelIndex]));
 
 const qaSource = read("js/qa-mode.js");
 const engineSource = read("js/game-engine.js");
@@ -88,6 +94,10 @@ assert.doesNotMatch(qaSource, /\bfetch\s*\(|XMLHttpRequest|WebSocket/);
 assert.match(engineSource, /consumeSpinOverride/);
 assert.match(engineSource, /waitForFreeSpinStep/);
 assert.match(engineSource, /bindGameControls/);
+assert.match(engineSource, /testMysteryModifier/);
+assert.match(qaSource, /Test Spotlight/);
+assert.match(qaSource, /Test Center Tree/);
+assert.match(qaSource, /Test Double Commune/);
 assert.match(indexSource, /qa-mode\.css/);
 assert.match(indexSource, /js\/qa-mode\.js/);
 assert.ok(indexSource.indexOf("js/qa-mode.js") < indexSource.indexOf("js/game-engine.js"), "QA module must load before the engine");

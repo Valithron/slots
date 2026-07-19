@@ -25,6 +25,15 @@
     "free-spins.start": event("features", "restart", "feature"),
     "free-spins.retrigger": event("features", "restart", "feature"),
     "free-spins.summary": event("features", "restart", "feature"),
+    "mystery.token.one": event("features", "restart", "critical"),
+    "mystery.token.two": event("features", "restart", "critical"),
+    "mystery.token.three": event("features", "restart", "critical"),
+    "mystery.token.fourPlus": event("features", "restart", "critical"),
+    "mystery.modifier.reveal": event("features", "restart", "feature"),
+    "mystery.freeSpin.awarded": event("features", "restart", "feature"),
+    "mystery.freeSpin.start": event("features", "restart", "feature"),
+    "mystery.rescue.trigger": event("features", "restart", "feature"),
+    "mystery.fortuneBurst": event("features", "restart", "feature"),
   });
 
   const CONFIG = app.audioConfig = Object.freeze({
@@ -294,6 +303,15 @@
         case "free-spins.start": synthChord(handle, [330, 440, 554, 659], { spacing: .075, duration: .22, gain: .05 }); synthTone(handle, { frequency: 165, endFrequency: 330, duration: .42, gain: .03 }); break;
         case "free-spins.retrigger": synthChord(handle, [523, 659, 784, 1047], { spacing: .055, duration: .2, gain: .06 }); synthTone(handle, { frequency: 130, endFrequency: 260, duration: .42, type: "triangle", gain: .035 }); break;
         case "free-spins.summary": synthChord(handle, [262, 330, 392, 523, 659], { spacing: .085, duration: .32, gain: .055, type: "sine" }); break;
+        case "mystery.token.one": synthTone(handle, { frequency: 740, endFrequency: 1047, duration: .18, type: "sine", gain: .035 }); break;
+        case "mystery.token.two": synthChord(handle, [587, 784, 988], { spacing: .055, duration: .2, gain: .047, type: "sine" }); break;
+        case "mystery.token.three": synthChord(handle, [523, 659, 784, 1047], { spacing: .06, duration: .23, gain: .055 }); break;
+        case "mystery.token.fourPlus": synthChord(handle, [392, 523, 659, 784, 1047, 1319], { spacing: .055, duration: .3, gain: .065 }); synthTone(handle, { frequency: 92, endFrequency: 368, duration: .68, type: "sawtooth", gain: .03 }); break;
+        case "mystery.modifier.reveal": synthChord(handle, [659, 831, 988], { spacing: .07, duration: .2, gain: .045, type: "triangle" }); break;
+        case "mystery.freeSpin.awarded": synthChord(handle, [440, 554, 659, 880], { spacing: .065, duration: .22, gain: .052 }); break;
+        case "mystery.freeSpin.start": synthTone(handle, { frequency: 165, endFrequency: 660, duration: .38, type: "triangle", gain: .042 }); synthTone(handle, { frequency: 880, duration: .16, gain: .035, when: .24 }); break;
+        case "mystery.rescue.trigger": synthTone(handle, { frequency: 620, endFrequency: 155, duration: .3, type: "sawtooth", gain: .038 }); synthChord(handle, [330, 440, 660], { spacing: .055, duration: .18, gain: .045 }); break;
+        case "mystery.fortuneBurst": synthTone(handle, { frequency: 196, endFrequency: 784, duration: .52, type: "sine", gain: .045 }); synthChord(handle, [523, 659, 784], { spacing: .06, duration: .22, gain: .048 }); break;
         default: finish(handle); return null;
       }
       const latestEnd = Math.max(...handle.sources.map(source => Number(source?.context?.currentTime) || 0), 0);
@@ -418,6 +436,12 @@
       playFreeSpinStart: () => fire("free-spins.start"),
       playRetrigger: () => fire("free-spins.retrigger"),
       playFreeSpinSummary: () => fire("free-spins.summary"),
+      playMysteryToken: count => fire(count >= 4 ? "mystery.token.fourPlus" : count === 3 ? "mystery.token.three" : count === 2 ? "mystery.token.two" : "mystery.token.one"),
+      playMysteryModifierReveal: () => fire("mystery.modifier.reveal"),
+      playMysteryFreeSpinAwarded: () => fire("mystery.freeSpin.awarded"),
+      playMysteryFreeSpinStart: () => fire("mystery.freeSpin.start"),
+      playMysteryRescue: () => fire("mystery.rescue.trigger"),
+      playMysteryFortuneBurst: () => fire("mystery.fortuneBurst"),
       playWinSound: amount => fire(amount >= 100 ? "win.nice" : "win.small"),
       playLossSound: () => fire("win.loss"),
       playErrorSound: () => fire("ui.error"),

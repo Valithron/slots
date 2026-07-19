@@ -7,6 +7,8 @@
     const session = {
       paidSpins: 0,
       freeSpins: 0,
+      mysteryFreeSpins: 0,
+      allyFreeSpins: 0,
       winningPaidSpins: 0,
       winningFreeSpins: 0,
       coinsWagered: 0,
@@ -16,7 +18,7 @@
     };
 
     function recordSpin({ wager = 0, coinCost = wager, payout = 0, spinType = "paid" }) {
-      const paid = spinType !== "free";
+      const paid = spinType === "paid";
       if (paid) {
         session.paidSpins += 1;
         session.coinsWagered += Math.max(0, Math.floor(coinCost));
@@ -24,6 +26,8 @@
         if (payout > 0) session.winningPaidSpins += 1;
       } else {
         session.freeSpins += 1;
+        if (spinType === "mystery-free") session.mysteryFreeSpins += 1;
+        else session.allyFreeSpins += 1;
         session.freeSpinCoinsWon += Math.max(0, Math.floor(payout));
         if (payout > 0) session.winningFreeSpins += 1;
       }

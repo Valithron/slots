@@ -24,6 +24,7 @@ await import("../js/persistence.js");
 await import("../js/visual-effects-settings.js");
 await import("../js/payouts.js");
 await import("../js/combination-clarity-payouts.js");
+await import("../js/mystery.js");
 await import("../js/game-flow.js");
 await import("../js/effects.js");
 await import("../js/mobile-effects.js");

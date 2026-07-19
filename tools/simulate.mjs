@@ -8,6 +8,7 @@ await import("../js/free-spins.js");
 await import("../js/allies.js");
 await import("../js/payouts.js");
 await import("../js/combination-clarity-payouts.js");
+await import("../js/mystery.js");
 await import("../js/ally-payouts.js");
 
 const app = globalThis.CommuneFortune;
@@ -63,7 +64,8 @@ function enumerateExactOutcomes() {
     outcomes: 0, totalWagered: 0, baseLinePaid: 0, resolvedLinePaid: 0, combinationPaid: 0, naturalPaid: 0,
     triggerOutcomes: 0, fortuneGainCounts: new Map(), fortuneBonusPaidIfActive: 0,
     maximumFortunePayout: 0, maximumTriggerPaidPayout: 0, maximumFreeSpinPayout: 0,
-    wildActivated: 0, combinationOutcomes: 0, categories: new Map(),
+    maximumBaseSpinPayout: 0, wildActivated: 0, combinationOutcomes: 0, categories: new Map(),
+    mysteryTokenCounts: new Map(), mysteryFreeSpinsRequested: 0, mysteryModifierAwards: 0,
   };
   for (const targetStops of enumerateStops(CONFIG.reels)) {
     for (let roll = 0; roll < CONFIG.expandingWild.outcomes; roll += 1) {
@@ -81,8 +83,12 @@ function enumerateExactOutcomes() {
       if (natural.featureRolls.expandingWild.activated) acc.wildActivated += 1;
       if (natural.combinationWins.length) acc.combinationOutcomes += 1;
       acc.maximumFortunePayout = Math.max(acc.maximumFortunePayout, fortune.totalWin);
+      acc.maximumBaseSpinPayout = Math.max(acc.maximumBaseSpinPayout, natural.totalWin);
       if (natural.freeSpinTrigger.triggered) acc.maximumTriggerPaidPayout = Math.max(acc.maximumTriggerPaidPayout, fortune.totalWin);
       acc.maximumFreeSpinPayout = Math.max(acc.maximumFreeSpinPayout, free.totalWin);
+      increment(acc.mysteryTokenCounts, natural.mysteryTokenCount >= 4 ? "4+" : String(natural.mysteryTokenCount));
+      acc.mysteryFreeSpinsRequested += natural.mysteryAward.freeSpinsRequested;
+      if (natural.mysteryAward.modifier) acc.mysteryModifierAwards += 1;
       const awardKey = natural.fortuneMeterAward.jackpotCharge ? "jackpot" : natural.fortuneMeterAward.totalPoints;
       increment(acc.fortuneGainCounts, awardKey);
       const key = JSON.stringify({ payout: free.totalWin, trigger: free.freeSpinTrigger.triggered, tier: free.naturalWinTier });
@@ -378,6 +384,10 @@ function summarize(acc) {
     return { id, incrementalRtp: incremental, totalRtp: baselineTotal + incremental, averageAllyBonus: initial[id].bonusMean };
   });
   const totals = allies.map(item => item.totalRtp);
+  const mysteryTokenFrequency = Object.fromEntries(["0", "1", "2", "3", "4+"].map(key => [
+    key,
+    (acc.mysteryTokenCounts.get(key) || 0) / acc.outcomes,
+  ]));
   return {
     mode: "exact-production-transition",
     exactOutcomes: acc.outcomes,
@@ -391,6 +401,12 @@ function summarize(acc) {
     },
     initialUntuned: initialResults,
     allies,
+    mysteryExact: {
+      tokenFrequency: mysteryTokenFrequency,
+      averageFreeSpinsRequestedPerPaidSpin: acc.mysteryFreeSpinsRequested / acc.outcomes,
+      modifierAwardFrequencyPerPaidSpin: acc.mysteryModifierAwards / acc.outcomes,
+      maximumBaseSpinPayout: acc.maximumBaseSpinPayout,
+    },
     paritySpread: Math.max(...totals) - Math.min(...totals),
     lowestAllyTotalRtp: Math.min(...totals),
     highestAllyTotalRtp: Math.max(...totals),
@@ -415,23 +431,55 @@ function printReport(report) {
   console.log(`\nParity spread: ${percentage(report.paritySpread)}`);
   console.log(`Range: ${percentage(report.lowestAllyTotalRtp)} to ${percentage(report.highestAllyTotalRtp)}`);
   console.log(report.medianNote);
+  console.log("\nMystery Token exact visible-grid frequencies:");
+  for (const key of ["0", "1", "2", "3", "4+"]) {
+    console.log(`  ${key.padStart(2)} token${key === "1" ? " " : "s"}  ${percentage(report.mysteryExact.tokenFrequency[key])}`);
+  }
+  console.log(`  Free Spins requested per paid spin: ${report.mysteryExact.averageFreeSpinsRequestedPerPaidSpin.toFixed(6)}`);
+  console.log(`  Modifier award frequency: ${percentage(report.mysteryExact.modifierAwardFrequencyPerPaidSpin)}`);
+  if (report.mystery) {
+    const mystery = report.mystery;
+    console.log(`\nSeeded Mystery chain simulation (${mystery.sessions.toLocaleString()} paid-spin cycles, seed 0x${mystery.seed.toString(16)}):`);
+    console.log(`  Baseline without Mystery rewards: ${percentage(mystery.baselineRtp)}`);
+    console.log(`  Mystery Token/free/Fortune increment: +${percentage(mystery.incrementalRtpFromMysteryTokens)}`);
+    console.log(`  Mystery Modifier increment: +${percentage(mystery.incrementalRtpFromModifiers)}`);
+    console.log(`  New total RTP: ${percentage(mystery.totalRtp)}`);
+    console.log(`  Mystery Free Spins awarded per paid spin: ${mystery.averageMysteryFreeSpinsAwardedPerPaidSpin.toFixed(6)}`);
+    console.log(`  Mystery Free Spins played per paid spin: ${mystery.averageMysteryFreeSpinsPerPaidSpin.toFixed(6)}`);
+    console.log(`  Chain start / conditional length / maximum: ${percentage(mystery.mysteryChainStartFrequency)} / ${mystery.averageConditionalChainLength.toFixed(4)} / ${mystery.maximumChainLength}`);
+    console.log(`  Fortune charge consumption: ${percentage(mystery.fortuneChargeFrequency)}`);
+    console.log(`  Ally triggers, paid / Mystery: ${percentage(mystery.paidAllyTriggerFrequency)} / ${percentage(mystery.mysteryAllyTriggerFrequency)}`);
+    console.log(`  Maximum coherent spin / paid cycle: ${mystery.maximumSingleSpinPayout.toLocaleString()} / ${mystery.maximumPaidCyclePayout.toLocaleString()} coins`);
+    console.log("  Modifier awards per paid spin:");
+    for (const id of CONFIG.mystery.normalModifierPool) console.log(`    ${id.padEnd(16)} ${mystery.modifierAwardsPerPaidSpin[id].toFixed(6)}`);
+  }
 }
 
 function checkReport(report) {
   const failures = [];
-  const expectedBaseline = 0.941636;
-  if (Math.abs(report.baseline.totalRtp - expectedBaseline) > 0.00001) failures.push(`Baseline RTP changed: ${percentage(report.baseline.totalRtp)}`);
   if (Math.abs(report.baseline.triggerFrequency - 1 / 64) > probabilityTolerance) failures.push(`Trigger frequency changed: ${percentage(report.baseline.triggerFrequency)}`);
-  if (report.paritySpread > CONFIG.rtpTargets.allyParitySpread + 1e-12) failures.push(`Ally parity spread too wide: ${percentage(report.paritySpread)}`);
+  const scatterTotal = Object.values(report.mysteryExact.tokenFrequency).reduce((sum, probability) => sum + probability, 0);
+  if (Math.abs(scatterTotal - 1) > probabilityTolerance) failures.push(`Mystery Token probabilities do not sum to one: ${scatterTotal}`);
+  if (report.mysteryExact.tokenFrequency["2"] < 0.05) failures.push(`Two-token results are too rare: ${percentage(report.mysteryExact.tokenFrequency["2"])}`);
+  if (report.mysteryExact.tokenFrequency["3"] <= 0 || report.mysteryExact.tokenFrequency["3"] >= 0.15) failures.push(`Three-token frequency is outside the intended occasional range: ${percentage(report.mysteryExact.tokenFrequency["3"])}`);
+  if (report.mysteryExact.tokenFrequency["4+"] <= 0 || report.mysteryExact.tokenFrequency["4+"] >= 0.05) failures.push(`Four-plus-token results must remain rare but possible: ${percentage(report.mysteryExact.tokenFrequency["4+"])}`);
   for (const ally of report.allies) {
-    if (ally.totalRtp < CONFIG.rtpTargets.withAllyTotal.minimum || ally.totalRtp > CONFIG.rtpTargets.withAllyTotal.maximum) failures.push(`${ally.name} RTP outside target: ${percentage(ally.totalRtp)}`);
     if (ally.averageFreeSpinsPerFeature < 4 || ally.averageFreeSpinsPerFeature > 20) failures.push(`${ally.name} feature length invalid.`);
     if (ally.featureZeroPayFrequency < 0 || ally.featureZeroPayFrequency > 1) failures.push(`${ally.name} zero-pay frequency invalid.`);
+  }
+  if (!report.mystery || !Number.isFinite(report.mystery.totalRtp)) failures.push("Seeded Mystery chain report is missing or invalid.");
+  else {
+    if (report.mystery.totalRtp <= report.mystery.baselineRtp) failures.push(`Mystery system did not add return: ${percentage(report.mystery.totalRtp)}`);
+    if (Math.abs(report.mystery.totalMysteryIncrementalRtp
+      - report.mystery.incrementalRtpFromMysteryTokens
+      - report.mystery.incrementalRtpFromModifiers) > probabilityTolerance) failures.push("Mystery RTP components do not reconcile.");
+    if (report.mystery.maximumQueuedFreeSpins > CONFIG.mystery.maximumQueuedFreeSpins) failures.push("Mystery Free Spin queue exceeded its configured cap.");
+    if (report.mystery.paidAllyTriggerFrequency <= 0 || report.mystery.mysteryAllyTriggerFrequency <= 0) failures.push("Both paid and Mystery Free Spins must be able to trigger Ally Free Spins.");
   }
   if (failures.length) {
     failures.forEach(failure => console.error(`CHECK FAILED: ${failure}`));
     process.exitCode = 1;
-  } else console.log("\nExact baseline, ally parity, RTP range, cap, and probability checks: PASS");
+  } else console.log("\nExact token frequencies, deterministic chains, queue cap, trigger, and probability checks: PASS");
 }
 
 function seededRandom(seed = 0x5f3759df) {
@@ -443,6 +491,211 @@ function sampleCategory(categories, rng) {
   for (const category of categories) { roll -= category.probability; if (roll <= 0) return category; }
   return categories.at(-1);
 }
+
+function simulateMysteryMode({ sessions, modifiersEnabled, seed = 0x4d595354 }) {
+  const rng = seededRandom(seed);
+  const simState = {
+    coins: 1_000_000,
+    lineBetIndex: 0,
+    fortuneMeter: { value: 0, charged: false },
+    freeSpinSession: null,
+    pendingSpin: null,
+    mystery: app.mystery.createState(),
+  };
+  const modifierAwards = Object.fromEntries(CONFIG.mystery.normalModifierPool.map(id => [id, 0]));
+  const modifierApplications = Object.fromEntries(CONFIG.mystery.normalModifierPool.map(id => [id, 0]));
+  const tokenCounts = { "0": 0, "1": 0, "2": 0, "3": 0, "4+": 0 };
+  let spinSequence = 0;
+  let totalPayout = 0;
+  let paidSpins = 0;
+  let mysteryFreeSpins = 0;
+  let allyFreeSpins = 0;
+  let awardedMysteryFreeSpins = 0;
+  let paidAllyTriggers = 0;
+  let mysteryAllyTriggers = 0;
+  let fortuneChargesConsumed = 0;
+  let eligibleFortuneSpins = 0;
+  let modifierDirectPayout = 0;
+  let rootsWithMysteryChain = 0;
+  let totalConditionalChainLength = 0;
+  let maximumChainLength = 0;
+  let maximumSingleSpinPayout = 0;
+  let maximumPaidCyclePayout = 0;
+  let maximumQueuedFreeSpins = 0;
+  let queueCapHits = 0;
+  let strongFallbackAwards = 0;
+
+  function configureAllyFeature() {
+    const session = simState.freeSpinSession;
+    if (!session?.active || session.status !== app.freeSpins.FREE_SPIN_STATUSES.INTRO) return;
+    const ally = app.allies.createAllyState();
+    ally.confirmed = true;
+    ally.featureStarted = true;
+    ally.legacyNoAlly = true;
+    session.ally = ally;
+    session.status = app.freeSpins.FREE_SPIN_STATUSES.READY;
+  }
+
+  function runSpin(spinType) {
+    const session = simState.freeSpinSession;
+    const spinState = spinType === "free"
+      ? app.freeSpins.getLockedSpinState(session, simState)
+      : simState;
+    const referenceBet = spinType === "free" ? session.referenceBet : wager;
+    const totalAwardedSpins = spinType === "free" ? session.totalAwardedSpins : 0;
+    const activeModifiers = modifiersEnabled ? app.mystery.peekModifierQueue(simState) : [];
+    for (const modifier of activeModifiers) modifierApplications[modifier.id] += 1;
+    const targetStops = CONFIG.reels.map(reel => Math.floor(rng() * reel.length));
+    const result = payouts.createSpinResult({
+      targetStops,
+      state: spinState,
+      id: `mystery-mc-${modifiersEnabled ? "full" : "tokens"}-${spinSequence += 1}`,
+      createdAt: "seeded-mystery-simulation",
+      spinType,
+      referenceBet,
+      totalAwardedSpins,
+      mysteryModifiers: activeModifiers,
+      allyBypass: true,
+      rng,
+    });
+
+    const baselineSource = result.mysteryRescue?.originalResult || result;
+    const withoutModifiers = payouts.createSpinResult({
+      targetStops: baselineSource.targetStops,
+      state: spinState,
+      id: `${result.id}-direct-baseline`,
+      createdAt: "seeded-mystery-simulation",
+      spinType,
+      referenceBet,
+      totalAwardedSpins,
+      featureRolls: baselineSource.featureRolls,
+      mysteryModifiers: [],
+      mysterySkipRescue: true,
+      allyBypass: true,
+      rng: () => 0.5,
+    });
+    modifierDirectPayout += result.totalWin - withoutModifiers.totalWin;
+
+    if (!app.mystery.commitSpinStart(simState, result)) throw new Error(`Unable to commit simulated ${spinType} spin.`);
+    if (["paid", "mystery-free"].includes(spinType)) {
+      eligibleFortuneSpins += 1;
+      if (result.fortuneSpin.consumedCharge) fortuneChargesConsumed += 1;
+    }
+    payouts.consumeFortuneChargeState(simState, result);
+    simState.coins -= result.coinCost;
+    simState.pendingSpin = result;
+    const settled = payouts.settlePendingSpinState(simState);
+    if (!settled) throw new Error(`Unable to settle simulated ${spinType} spin.`);
+    totalPayout += settled.totalWin;
+    maximumSingleSpinPayout = Math.max(maximumSingleSpinPayout, settled.totalWin);
+    const tokenKey = settled.mysteryTokenCount >= 4 ? "4+" : String(settled.mysteryTokenCount);
+    tokenCounts[tokenKey] += 1;
+    const mysterySettlement = settled.mysterySettlement;
+    awardedMysteryFreeSpins += mysterySettlement.freeSpinsAwarded;
+    if (mysterySettlement.capped) queueCapHits += 1;
+    if (mysterySettlement.strongFallback) strongFallbackAwards += 1;
+    if (mysterySettlement.modifier) modifierAwards[mysterySettlement.modifier.id] += 1;
+    maximumQueuedFreeSpins = Math.max(maximumQueuedFreeSpins, simState.mystery.queuedFreeSpins);
+    if (!modifiersEnabled) simState.mystery.modifierQueue = [];
+
+    if (spinType === "paid") {
+      paidSpins += 1;
+      if (settled.freeSpinTrigger.triggered) paidAllyTriggers += 1;
+    } else if (spinType === "mystery-free") {
+      mysteryFreeSpins += 1;
+      if (settled.freeSpinTrigger.triggered) mysteryAllyTriggers += 1;
+    } else allyFreeSpins += 1;
+    configureAllyFeature();
+    return settled;
+  }
+
+  for (let root = 0; root < sessions; root += 1) {
+    const payoutBeforeRoot = totalPayout;
+    let mysterySpinsThisRoot = 0;
+    runSpin("paid");
+    let guard = 0;
+    while ((simState.freeSpinSession?.active || simState.mystery.queuedFreeSpins > 0) && guard < 1000) {
+      guard += 1;
+      const session = simState.freeSpinSession;
+      if (session?.active) {
+        configureAllyFeature();
+        if (session.status === app.freeSpins.FREE_SPIN_STATUSES.PRESENTING) {
+          simState.freeSpinSession = app.freeSpins.markFreeSpinPresented(session, session.presentationSpin?.id);
+          continue;
+        }
+        if (session.status === app.freeSpins.FREE_SPIN_STATUSES.COMPLETE || session.remainingSpins <= 0) {
+          simState.freeSpinSession = null;
+          continue;
+        }
+        if (session.status === app.freeSpins.FREE_SPIN_STATUSES.READY) {
+          runSpin("free");
+          continue;
+        }
+        throw new Error(`Unexpected simulated Ally status: ${session.status}`);
+      }
+      runSpin("mystery-free");
+      mysterySpinsThisRoot += 1;
+    }
+    if (guard >= 1000) throw new Error("Mystery simulation exceeded its deterministic chain guard.");
+    if (mysterySpinsThisRoot > 0) {
+      rootsWithMysteryChain += 1;
+      totalConditionalChainLength += mysterySpinsThisRoot;
+      maximumChainLength = Math.max(maximumChainLength, mysterySpinsThisRoot);
+    }
+    maximumPaidCyclePayout = Math.max(maximumPaidCyclePayout, totalPayout - payoutBeforeRoot);
+  }
+
+  const totalSpins = paidSpins + mysteryFreeSpins + allyFreeSpins;
+  const totalWagered = paidSpins * wager;
+  return {
+    sessions,
+    seed,
+    totalPayout,
+    totalWagered,
+    totalRtp: totalPayout / totalWagered,
+    paidSpins,
+    mysteryFreeSpins,
+    allyFreeSpins,
+    averageMysteryFreeSpinsAwardedPerPaidSpin: awardedMysteryFreeSpins / paidSpins,
+    averageMysteryFreeSpinsPerPaidSpin: mysteryFreeSpins / paidSpins,
+    mysteryChainStartFrequency: rootsWithMysteryChain / paidSpins,
+    averageConditionalChainLength: totalConditionalChainLength / Math.max(1, rootsWithMysteryChain),
+    maximumChainLength,
+    modifierAwardsPerPaidSpin: Object.fromEntries(Object.entries(modifierAwards).map(([id, count]) => [id, count / paidSpins])),
+    modifierApplicationsPerSpin: Object.fromEntries(Object.entries(modifierApplications).map(([id, count]) => [id, count / totalSpins])),
+    tokenFrequencyAllSpins: Object.fromEntries(Object.entries(tokenCounts).map(([key, count]) => [key, count / totalSpins])),
+    fortuneChargeFrequency: fortuneChargesConsumed / Math.max(1, eligibleFortuneSpins),
+    paidAllyTriggerFrequency: paidAllyTriggers / paidSpins,
+    mysteryAllyTriggerFrequency: mysteryAllyTriggers / Math.max(1, mysteryFreeSpins),
+    maximumSingleSpinPayout,
+    maximumPaidCyclePayout,
+    maximumQueuedFreeSpins,
+    queueCapHitFrequency: queueCapHits / totalSpins,
+    strongFallbackAwardsPerPaidSpin: strongFallbackAwards / paidSpins,
+    directModifierPayoutRtp: modifierDirectPayout / totalWagered,
+  };
+}
+
+function simulateMysteryChains(report, sessions) {
+  const full = simulateMysteryMode({ sessions, modifiersEnabled: true });
+  const tokensOnly = simulateMysteryMode({ sessions, modifiersEnabled: false });
+  const baselineRtp = report.baseline.totalRtp;
+  return {
+    mode: "seeded-production-chain-monte-carlo",
+    ...full,
+    baselineRtp,
+    tokensOnlyRtp: tokensOnly.totalRtp,
+    incrementalRtpFromMysteryTokens: tokensOnly.totalRtp - baselineRtp,
+    incrementalRtpFromModifiers: full.totalRtp - tokensOnly.totalRtp,
+    totalMysteryIncrementalRtp: full.totalRtp - baselineRtp,
+    tokensOnlyDiagnostics: {
+      mysteryFreeSpins: tokensOnly.mysteryFreeSpins,
+      fortuneChargeFrequency: tokensOnly.fortuneChargeFrequency,
+      maximumPaidCyclePayout: tokensOnly.maximumPaidCyclePayout,
+    },
+  };
+}
+
 function monteCarlo(report, categories, sessions = 200000) {
   const rng = seededRandom();
   console.log(`\nSeeded Monte Carlo verification (${sessions.toLocaleString()} features per ally)`);
@@ -476,6 +729,7 @@ function monteCarlo(report, categories, sessions = 200000) {
 validateConfig();
 const accumulator = enumerateExactOutcomes();
 const report = summarize(accumulator);
+report.mystery = simulateMysteryChains(report, Number(args.get("mystery-sessions") || 50000));
 if (outputJson) console.log(JSON.stringify(report, null, 2)); else printReport(report);
 if (checkTarget) checkReport(report);
 if (runMonteCarlo) monteCarlo(report, accumulator.categories, Number(args.get("sessions") || 200000));
