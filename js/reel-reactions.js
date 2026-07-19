@@ -7,16 +7,26 @@
   const REACTION_MS = 650;
   const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
   const VISIBLE_COPY = CONFIG.reelAnimation.baseCopy;
+  const CHARACTER_KEYS = new Set(CONFIG.characterPresentation.allMembers);
 
   const active = new Map();
   const previewOverrides = new Map();
+  const resolvedAssetCache = new Map();
+  const preloadPromises = new Map();
+  const failedAssetUrls = new Set();
   let capturedUI = null;
   let capturedReels = null;
   let previewTimer = null;
   let pendingCombinationWins = [];
+  let generation = 0;
 
-  const originalResolveReactionAsset = app.reactions.resolveReactionAsset;
-  const normalizeTier = tier => tier === "jackpot" || tier === "big" ? "big" : tier === "combination" || tier === "nice" ? "nice" : tier === "small" ? "small" : "base";
+  const normalizeTier = tier => tier === "jackpot" || tier === "big"
+    ? "big"
+    : tier === "combination" || tier === "nice"
+      ? "nice"
+      : tier === "small"
+        ? "small"
+        : "base";
 
   function fallbackLevels(tier) {
     const level = normalizeTier(tier);
@@ -36,50 +46,131 @@
     return clean.replace(/\.svg$/i, `-${level}.svg`);
   }
 
+  function isUsableUrl(value) {
+    return typeof value === "string"
+      && value.trim() !== ""
+      && !value.includes("undefined")
+      && !value.includes("null");
+  }
+
   function baseAsset(symbolKey) {
-    return originalResolveReactionAsset(symbolKey, "base");
+    const character = CONFIG.characterPresentation.characters[symbolKey];
+    const configured = character?.base || CONFIG.symbols[symbolKey]?.image || CONFIG.characterPresentation.genericAsset;
+    const path = app.reactions.versionAssetUrl(configured);
+    return {
+      characterKey: symbolKey,
+      requestedLevel: "base",
+      source: character?.base ? "base" : "generic",
+      path,
+      fallbackPath: path,
+      genericPath: app.reactions.versionAssetUrl(CONFIG.characterPresentation.genericAsset),
+      fallbackPaths: isUsableUrl(path) ? [path] : [],
+    };
   }
 
   function configuredVariantPath(characterKey, level, basePath) {
     const configured = CONFIG.characterPresentation.characters[characterKey]?.[level];
-    return typeof configured === "string" && configured.trim() ? configured : variantPath(basePath, level);
+    return typeof configured === "string" && configured.trim()
+      ? configured
+      : variantPath(basePath, level);
+  }
+
+  function resolveVariantChain(symbolKey, tier) {
+    if (!CHARACTER_KEYS.has(symbolKey)) return [];
+    const base = baseAsset(symbolKey);
+    const seen = new Set();
+    return fallbackLevels(tier).map(level => {
+      const configured = configuredVariantPath(symbolKey, level, base.path);
+      return {
+        ...base,
+        requestedLevel: level,
+        source: level,
+        path: app.reactions.versionAssetUrl(configured),
+      };
+    }).filter(asset => {
+      if (!isUsableUrl(asset.path) || seen.has(asset.path)) return false;
+      seen.add(asset.path);
+      return true;
+    });
   }
 
   function resolveConventionAsset(characterKey, requestedLevel = "base") {
+    if (!CHARACTER_KEYS.has(characterKey)) return baseAsset(characterKey);
+    const chain = resolveVariantChain(characterKey, requestedLevel);
     const base = baseAsset(characterKey);
-    if (!base?.path || characterKey === "TOL") return originalResolveReactionAsset(characterKey, requestedLevel);
-    const paths = fallbackLevels(requestedLevel).map(level => app.reactions.versionAssetUrl(configuredVariantPath(characterKey, level, base.path)));
     return {
       characterKey,
       requestedLevel,
-      source: requestedLevel,
-      path: paths[0],
-      fallbackPath: paths[1] || base.path,
-      genericPath: paths[2] || paths[1] || base.path,
-      fallbackPaths: paths,
+      source: normalizeTier(requestedLevel),
+      path: chain[0]?.path || base.path,
+      fallbackPath: chain[1]?.path || base.path,
+      genericPath: chain[2]?.path || chain[1]?.path || base.genericPath || base.path,
+      fallbackPaths: chain.map(asset => asset.path),
     };
   }
 
   app.reactions.resolveReactionAsset = resolveConventionAsset;
 
-  function resolveVariantChain(symbolKey, tier) {
-    if (!symbolKey || symbolKey === "TOL") return [baseAsset("TOL")];
-    const seen = new Set();
-    return fallbackLevels(tier).map(level => {
-      const base = baseAsset(symbolKey);
-      return { ...base, requestedLevel: level, path: app.reactions.versionAssetUrl(configuredVariantPath(symbolKey, level, base.path)) };
-    }).filter(asset => {
-      if (!asset?.path || seen.has(asset.path)) return false;
-      seen.add(asset.path);
-      return true;
+  function preloadAsset(src) {
+    if (!isUsableUrl(src)) return Promise.reject(new Error("Reaction asset URL is empty or invalid."));
+    if (failedAssetUrls.has(src)) return Promise.reject(new Error(`Reaction asset previously failed: ${src}`));
+    if (preloadPromises.has(src)) return preloadPromises.get(src);
+    if (typeof globalThis.Image !== "function") return Promise.resolve(src);
+
+    const promise = new Promise((resolve, reject) => {
+      const image = new globalThis.Image();
+      let settled = false;
+      const succeed = async () => {
+        if (settled) return;
+        settled = true;
+        try {
+          if (typeof image.decode === "function") await image.decode();
+        } catch {
+          // onload is authoritative; decode failures are not treated as broken assets.
+        }
+        resolve(src);
+      };
+      const fail = () => {
+        if (settled) return;
+        settled = true;
+        failedAssetUrls.add(src);
+        reject(new Error(`Unable to load reaction asset: ${src}`));
+      };
+      image.onload = succeed;
+      image.onerror = fail;
+      image.src = src;
+      if (image.complete && Number(image.naturalWidth) > 0) void succeed();
     });
+
+    preloadPromises.set(src, promise);
+    promise.catch(() => preloadPromises.delete(src));
+    return promise;
+  }
+
+  async function resolveLoadedReactionAsset(symbolKey, tier, currentSrc = "") {
+    const cacheKey = `${symbolKey}:${normalizeTier(tier)}`;
+    if (resolvedAssetCache.has(cacheKey)) return resolvedAssetCache.get(cacheKey);
+    const promise = (async () => {
+      const candidates = resolveVariantChain(symbolKey, tier);
+      for (const asset of candidates) {
+        if (asset.path === currentSrc && isUsableUrl(currentSrc)) return currentSrc;
+        try {
+          return await preloadAsset(asset.path);
+        } catch {
+          // Continue through the complete fallback chain.
+        }
+      }
+      return isUsableUrl(currentSrc) ? currentSrc : null;
+    })();
+    resolvedAssetCache.set(cacheKey, promise);
+    return promise;
   }
 
   function visibleCell(reelController, reel, row) {
     const topStops = reelController?.getCurrentTopStops?.() || [];
     const strip = reelController?.getReelElements?.()?.[reel]?.strip;
     const reelLength = CONFIG.reels[reel]?.length || 0;
-    if (!strip || !reelLength || !Number.isInteger(row)) return null;
+    if (!strip || !reelLength || !Number.isInteger(row) || !Number.isInteger(topStops[reel])) return null;
     const stop = (topStops[reel] + row) % reelLength;
     return strip.querySelector(`.symbol-cell[data-stop="${stop}"][data-copy="${VISIBLE_COPY}"]`);
   }
@@ -90,8 +181,10 @@
       if (!Number.isInteger(row)) return;
       const cell = visibleCell(reelController, reel, row);
       if (!cell) return;
+      const symbolKey = cell.dataset.symbol || win.symbolKey;
+      if (!CHARACTER_KEYS.has(symbolKey) || cell.classList?.contains?.("is-center-tree")) return;
       const key = `${reel}:${row}`;
-      if (!found.has(key)) found.set(key, { key, cell, reel, row, symbolKey: win.symbolKey });
+      if (!found.has(key)) found.set(key, { key, cell, reel, row, symbolKey });
     }));
     return [...found.values()];
   }
@@ -101,67 +194,64 @@
     if (entry) entry.timer = null;
   }
 
+  function safeSetSrc(entry, src) {
+    if (!entry?.image || !isUsableUrl(src) || !entry.image.isConnected || !active.has(entry.key)) return false;
+    entry.image.setAttribute("src", src);
+    return true;
+  }
+
   function restoreEntry(entry) {
     clearTimer(entry);
     if (!entry?.image) return;
-    entry.image.onerror = entry.originalOnError || null;
-    if (entry.baseSrc) entry.image.setAttribute("src", entry.baseSrc);
+    if (isUsableUrl(entry.baseSrc)) entry.image.setAttribute("src", entry.baseSrc);
     entry.image.removeAttribute("data-reel-reaction-active");
     entry.image.removeAttribute("data-reel-reaction-tier");
   }
 
   function stopAll() {
+    generation += 1;
     if (previewTimer) globalThis.clearTimeout(previewTimer);
     previewTimer = null;
     active.forEach(restoreEntry);
     active.clear();
   }
 
-  function installFallback(entry) {
-    entry.image.onerror = () => {
-      entry.variantIndex += 1;
-      while (entry.variantIndex < entry.chain.length && entry.chain[entry.variantIndex]?.path === entry.baseSrc) entry.variantIndex += 1;
-      if (entry.variantIndex >= entry.chain.length) {
-        entry.reactionSrc = entry.baseSrc;
-        entry.image.setAttribute("src", entry.baseSrc);
-        return;
-      }
-      entry.reactionSrc = entry.chain[entry.variantIndex].path;
-      entry.image.setAttribute("src", entry.reactionSrc);
-    };
-  }
-
-  function schedule(entry, showingReaction) {
+  function schedule(entry, showingReaction, localGeneration) {
     clearTimer(entry);
     entry.timer = globalThis.setTimeout(() => {
-      if (!active.has(entry.key) || !entry.image?.isConnected) return;
+      if (generation !== localGeneration || !active.has(entry.key) || !entry.image?.isConnected) return;
       const nextReaction = !showingReaction;
-      entry.image.setAttribute("src", nextReaction ? entry.reactionSrc : entry.baseSrc);
-      schedule(entry, nextReaction);
+      const nextSrc = nextReaction ? entry.reactionSrc : entry.baseSrc;
+      if (!safeSetSrc(entry, nextSrc)) return;
+      schedule(entry, nextReaction, localGeneration);
     }, showingReaction ? REACTION_MS : BASE_MS);
   }
 
   function start(wins, reelController, tier = "small", { forceMotion = false } = {}) {
     stopAll();
+    const localGeneration = generation;
     const cells = participatingCells(wins, reelController);
     const reducedMotion = !forceMotion && globalThis.matchMedia?.(REDUCED_MOTION_QUERY)?.matches === true;
+
     cells.forEach(item => {
       const image = item.cell?.querySelector?.("img");
       if (!image) return;
-      const symbolKey = item.cell.dataset.symbol || item.symbolKey;
-      const chain = resolveVariantChain(symbolKey, tier);
-      const baseSrc = baseAsset(symbolKey)?.path || image.getAttribute("src") || "";
-      const reactionSrc = chain.find(asset => asset?.path && asset.path !== baseSrc)?.path || baseSrc;
-      const entry = { ...item, image, symbolKey, chain, variantIndex: Math.max(0, chain.findIndex(asset => asset.path === reactionSrc)), reactionSrc, baseSrc, originalOnError: image.onerror, timer: null };
+      const currentSrc = image.getAttribute("src") || image.currentSrc || "";
+      const configuredBase = baseAsset(item.symbolKey)?.path;
+      const baseSrc = isUsableUrl(currentSrc) ? currentSrc : configuredBase;
+      if (!isUsableUrl(baseSrc)) return;
+      const entry = { ...item, image, baseSrc, reactionSrc: baseSrc, timer: null };
       active.set(item.key, entry);
       image.dataset.reelReactionActive = "true";
       image.dataset.reelReactionTier = normalizeTier(tier);
-      installFallback(entry);
-      if (reducedMotion) image.setAttribute("src", reactionSrc);
-      else if (reactionSrc !== baseSrc) {
-        image.setAttribute("src", baseSrc);
-        schedule(entry, false);
-      }
+
+      void resolveLoadedReactionAsset(item.symbolKey, tier, baseSrc).then(reactionSrc => {
+        if (generation !== localGeneration || !active.has(item.key) || !isUsableUrl(reactionSrc)) return;
+        entry.reactionSrc = reactionSrc;
+        if (reactionSrc === baseSrc) return;
+        if (reducedMotion) safeSetSrc(entry, reactionSrc);
+        else schedule(entry, false, localGeneration);
+      });
     });
     return cells;
   }
@@ -174,12 +264,27 @@
     });
   }
 
+  function patchReactionRoster(ui, model, tier) {
+    const roster = ui?.elements?.reactionRoster;
+    if (!roster || !Array.isArray(model?.portraits)) return;
+    const images = [...roster.querySelectorAll("img")];
+    images.forEach((image, index) => {
+      const portrait = model.portraits[index];
+      if (!portrait?.characterKey) return;
+      const currentSrc = image.getAttribute("src") || image.currentSrc || "";
+      void resolveLoadedReactionAsset(portrait.characterKey, tier || model.level, currentSrc).then(src => {
+        if (!image.isConnected || !isUsableUrl(src)) return;
+        image.setAttribute("src", src);
+      });
+    });
+  }
+
   function restorePreviewBoard() {
     previewOverrides.forEach((original, cell) => {
       cell.dataset.symbol = original.symbol;
       const image = cell.querySelector("img");
       if (image) {
-        image.setAttribute("src", original.src);
+        if (isUsableUrl(original.src)) image.setAttribute("src", original.src);
         image.setAttribute("alt", original.alt);
       }
     });
@@ -218,37 +323,48 @@
 
   function patchFactories() {
     const baseCreateUI = app.ui.createUI;
-    app.ui.createUI = function createUIWithReelReactions(...args) {
+    app.ui.createUI = function createUIWithReliableReactions(...args) {
       const ui = baseCreateUI(...args);
       capturedUI = ui;
       const baseMarkWins = ui.markWins.bind(ui);
       const baseMarkCombination = ui.markCombination?.bind(ui);
       const baseClearWins = ui.clearWins.bind(ui);
-      const baseClearFeaturePresentation = ui.clearFeaturePresentation.bind(ui);
-      if (baseMarkCombination) ui.markCombination = function markCombinationWithReactions(combinationWin, result, reelController) {
+      const baseShowReaction = ui.showReaction?.bind(ui);
+
+      if (baseMarkCombination) ui.markCombination = function markCombinationWithReliableReactions(combinationWin, result, reelController) {
         pendingCombinationWins = combinationWins(combinationWin);
         return baseMarkCombination(combinationWin, result, reelController);
       };
-      ui.markWins = function markWinsWithReactions(wins, reelController, tier, options) {
-        const result = baseMarkWins(wins, reelController, tier, options);
-        const reactionTier = pendingCombinationWins.length ? "small" : tier;
-        if (options?.reaction) start([...(wins || []), ...pendingCombinationWins], reelController, reactionTier, { forceMotion: options.forceMotion === true });
+
+      ui.markWins = function markWinsWithReliableReactions(wins, reelController, tier, options = {}) {
+        const combination = pendingCombinationWins;
         pendingCombinationWins = [];
+        const result = baseMarkWins(wins, reelController, tier, { ...options, reaction: false });
+        if (options.reaction) {
+          const reactionTier = combination.length ? "nice" : tier;
+          start([...(wins || []), ...combination], reelController, reactionTier, { forceMotion: options.forceMotion === true });
+        }
         return result;
       };
-      ui.clearWins = function clearWinsWithReactions(...clearArgs) {
+
+      ui.clearWins = function clearWinsWithReliableReactions(...clearArgs) {
         pendingCombinationWins = [];
         stopAll();
         restorePreviewBoard();
         return baseClearWins(...clearArgs);
       };
-      ui.clearFeaturePresentation = function clearFeatureWithReactions(...clearArgs) {
+
+      if (baseShowReaction) ui.showReaction = function showReactionWithResolvedPortraits(model, options = {}) {
+        const result = baseShowReaction(model, options);
+        patchReactionRoster(ui, model, options.tier || model?.level);
+        return result;
+      };
+
+      ui.stopReelReactions = () => {
         pendingCombinationWins = [];
         stopAll();
         restorePreviewBoard();
-        return baseClearFeaturePresentation(...clearArgs);
       };
-      ui.stopReelReactions = stopAll;
       return ui;
     };
 
@@ -269,11 +385,11 @@
     await capturedReels.spinTo([0, 0, 0], { anticipation: "none", reducedMotion: true, dramaEnabled: false, manualStopsEnabled: false });
 
     const wins = previewWins(tier, characterKey);
-    const forcedTier = tier === "jackpot" ? "jackpot" : tier === "combination" ? "small" : tier;
-    capturedUI.markWins(wins, capturedReels, forcedTier, { reaction: true, forceMotion: true });
+    const reelTier = tier === "jackpot" ? "jackpot" : tier === "combination" ? "nice" : tier;
+    capturedUI.markWins(wins, capturedReels, reelTier, { reaction: true, forceMotion: true });
 
     const name = CONFIG.characterPresentation.characters[characterKey]?.name || characterKey;
-    const level = tier === "combination" ? "combination" : forcedTier;
+    const level = tier === "combination" ? "combination" : reelTier;
     const reaction = {
       type: "character",
       characterKeys: [characterKey],
@@ -333,6 +449,27 @@
   }
 
   patchFactories();
-  app.reelReactions = { BASE_MS, REACTION_MS, normalizeTier, fallbackLevels, variantPath, configuredVariantPath, resolveVariantChain, participatingCells, combinationWins, start, stopAll, activeCount: () => active.size, preview, previewWins, PREVIEW_ROWS };
+  app.reelReactions = {
+    BASE_MS,
+    REACTION_MS,
+    normalizeTier,
+    fallbackLevels,
+    variantPath,
+    configuredVariantPath,
+    resolveConventionAsset,
+    resolveVariantChain,
+    preloadAsset,
+    resolveLoadedReactionAsset,
+    participatingCells,
+    combinationWins,
+    start,
+    stopAll,
+    activeCount: () => active.size,
+    failedAssetUrls,
+    resolvedAssetCache,
+    preview,
+    previewWins,
+    PREVIEW_ROWS,
+  };
   if (app.qa?.enabled) globalThis.setTimeout(mountQA, 0);
 })();
