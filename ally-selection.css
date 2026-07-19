@@ -129,20 +129,53 @@
 .ally-callout-ability { color: var(--ally-accent); font-size: 1.22rem; }
 .ally-callout-detail { margin: 2px 0 0; color: rgba(255, 255, 255, 0.84); font-size: 0.78rem; line-height: 1.35; }
 
+/* The Ally occupies the complete HUD row so its identity and ability never compete with numeric meters. */
+.free-spins-hud {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .ally-hud {
   display: grid !important;
-  grid-template-columns: 28px minmax(0, 1fr);
+  grid-column: 1 / -1;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 5px;
+  justify-self: stretch;
+  gap: 7px;
+  width: 100%;
   min-width: 0;
+  max-width: none;
   border-color: color-mix(in srgb, var(--ally-accent) 55%, transparent) !important;
 }
 .ally-hud[hidden] { display: none !important; }
-.ally-hud img { width: 28px; height: 32px; object-fit: contain; }
-.ally-hud-copy { min-width: 0; display: grid; }
+.ally-hud img { width: 28px; height: 32px; flex: 0 0 auto; object-fit: contain; }
+.ally-hud-copy {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  overflow: visible;
+  text-align: left;
+}
 .ally-hud-copy span,
-.ally-hud-copy strong { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ally-hud-copy strong {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.15;
+}
 .ally-hud-copy strong { color: var(--ally-accent); }
+
+.qa-ally-hud-preview {
+  margin-top: 6px;
+  padding: 6px;
+  border: 1px solid color-mix(in srgb, var(--ally-accent) 55%, transparent);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
 
 @media (max-width: 560px) {
   .ally-selection-layer { padding: 6px; }
@@ -155,6 +188,8 @@
   .ally-card-copy b { font-size: 0.67rem; }
   .ally-card-copy small { font-size: 0.56rem; line-height: 1.15; }
   .ally-confirm-button { margin-top: 8px; }
+  .free-spins-hud { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ally-hud-copy strong { font-size: 0.88rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
