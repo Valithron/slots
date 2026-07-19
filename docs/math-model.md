@@ -8,25 +8,49 @@ The game uses three 24-stop circular reel strips, a visible three-symbol window 
 24 × 24 × 24 × 4 = 55,296 exact weighted outcomes
 ```
 
-`tools/simulate.mjs` imports the production configuration and payout wrappers. The exact pass covers reel payouts, Tree Awakening, combinations, Fortune, the natural Three Trees trigger, bounded Commune Free Spins, isolated Ally state machines, and visible Mystery Token counts.
+`tools/simulate.mjs` imports the production configuration and payout wrappers. Its exact pass covers reel payouts, Tree Awakening, combinations, Fortune, the natural Three Trees trigger, bounded Commune Free Spins, isolated Ally state machines, and visible Mystery Token counts.
 
-Mystery modifiers and chained tickets add persistent state that is substantially larger than the existing exact feature solver. The simulator therefore adds a seeded production-path Monte Carlo pass for the full Mystery chain. The seed is fixed at `0x4d595354`, and `npm test` runs 50,000 paid-spin cycles in both full and token-only modes.
+`tools/simulate-mystery-scatter.mjs` runs the production settlement path with a fixed seed. It measures persistent Mystery queues, Rescue candidates, Fortune, Mystery Free Spins, Ally triggering, selected Ally abilities, and complete paid-spin cycles. The committed decimal seed is `1297634388`.
 
-## Mystery reel placement
+## Requested RTP layers
+
+The historical pre-Mystery configuration is preserved at commit `d5b044c`. It had no Scatter symbols and returned 94.1636% after ordinary Commune Free Spins. Since Mystery Tokens occupy real stops, current-strip layers are necessarily lower before Mystery awards are restored.
+
+| Layer | Definition | Result |
+| --- | --- | ---: |
+| A | Historical pre-Mystery exact total, commit `d5b044c` | 94.1636% |
+| B | Current strips with tokens counted but all Mystery awards disabled | 79.2902% Monte Carlo; 79.4423% exact current-strip baseline |
+| C | Current strips with +10 Fortune awards only | 79.8975% |
+| D | Fortune and modifiers, no Mystery Free Spin tickets | 89.9597% |
+| E | Fortune and Mystery Free Spin tickets, no modifiers | 84.7562% |
+| F | Full Mystery system without a selected Ally ability | 95.3734% |
+| G | Full Mystery system with each production Ally ability | 96.5688% to 97.2830% |
+
+Layers B through F use 500,000 paid cycles. Layer G uses 100,000 paid cycles per Ally. The no-Ally F layer is a diagnostic and legacy path. New Three Trees sessions require a selected Ally, so Layer G is the production-facing return range.
+
+## Mystery reel placement and tuning
 
 `MYS` is a real nonpaying Scatter symbol. It does not substitute and cannot produce an ordinary line win. Tokens count from the final coherent `originalMatrix` anywhere on the visible 3-by-3 grid.
 
-Reel one contains an adjacent Scatter pair plus one isolated Scatter. Reels two and three each contain three isolated Scatters. The adjacent pair is required because a single visible reel must be able to contribute two tokens to a four-plus result.
+The initial strips placed three Scatters on every reel. Reel one included an adjacent pair, which allows a single reel window to contribute two tokens. The initial 2+ outcome rate was 30.9896%, which matched the player report that tokens felt too constant.
 
-| Visible tokens | Exact probability | Award |
-| ---: | ---: | --- |
-| 0 | 27.6693% | None |
-| 1 | 41.3411% | Presentation only |
-| 2 | 22.9818% | +10 Fortune and one normal modifier |
-| 3 | 6.8359% | +1 Mystery Free Spin and one normal modifier |
-| 4+ | 1.1719% | +2 Mystery Free Spins and one strong modifier, falling back to normal while the strong pool is empty |
+The implemented Path B adjustment is deliberately small:
 
-The exact base pass requests 0.091796875 Mystery Free Spins per paid spin and produces a modifier award on 30.9895833% of paid results.
+- preserve all three Scatters on reel one, including the adjacent pair;
+- replace one isolated reel-two Scatter with Kenly;
+- replace one isolated reel-three Scatter with Gabi;
+- preserve all Mystery award values, modifier caps, and ticket caps.
+
+| Visible tokens | Before | Current exact | Award |
+| ---: | ---: | ---: | --- |
+| 0 | 27.6693% | 39.8438% | None |
+| 1 | 41.3411% | 38.2813% | Presentation only |
+| 2 | 22.9818% | 16.9271% | +10 Fortune and one normal modifier |
+| 3 | 6.8359% | 4.4271% | +1 Mystery Free Spin and one normal modifier |
+| 4+ | 1.1719% | 0.5208% | +2 Mystery Free Spins and one strong modifier, falling back to normal while the strong pool is empty |
+| 2+ total | 30.9896% | 21.8750% | Modifier-awarding result |
+
+The current exact base pass requests 0.0546875 Mystery Free Spins per paid spin. The 500,000-cycle full run observed 2+ tokens on 21.6784% of paid spins and 0.869404 visible tokens per paid spin, consistent with the exact distribution.
 
 ## Authoritative resolution order
 
@@ -45,6 +69,7 @@ Every paid, Mystery, and Ally spin creates one complete pending result before an
 11. Settle coins, ordinary Fortune, Fortune Burst, and explicit token Fortune once.
 12. Apply the final grid's Mystery award once, using its persisted award ID.
 13. Create or update the Ally session if the final natural grid qualifies.
+14. Present reactions only from the final selected result.
 
 The result stores its consumed-ticket marker, active modifiers, Rescue candidates, selected replacement, token cells, award, strong fallback, and settlement status. Reloading never draws a new replacement or reapplies an award.
 
@@ -63,9 +88,19 @@ They:
 
 The global ticket queue is capped at 20. A Mystery spin consumes exactly one ticket before its pending result is saved. A Three Trees trigger pauses the remaining queue because the active Ally session owns the game loop. Clearing the Ally summary exposes the same persisted Mystery queue again.
 
-Ally Free Spins never consume Mystery tickets. Tokens earned there still settle normally, and their modifier queue is available to the next Ally spin. Tickets earned there wait until the active Ally session closes.
+Ally Free Spins never consume Mystery tickets. Tokens earned there still settle normally, and tickets earned there wait until the active Ally session closes. In the 500,000-cycle F run, the longest Mystery chain was 6 spins, the maximum queued ticket count was 4, and the queue cap was never reached.
 
-## Modifier math
+## Modifier queue and stacking
+
+A naturally earned modifier applies to the next eligible spin. That spin consumes the queue before its result can award a replacement modifier. Since each result awards at most one modifier, natural play currently produces at most one queued modifier.
+
+The 500,000-cycle full run measured:
+
+- any queued modifier after settlement: 21.6549% of settled spins;
+- multiple queued modifiers: 0.0000%;
+- chain-inclusive modifier awards: 0.245286 awards per paid cycle.
+
+Stack caps are still authoritative for QA-injected queues, recovered state, and future award paths that can accumulate multiple awards.
 
 ### Spotlight
 
@@ -95,7 +130,7 @@ The multiplier applies to named Commune combinations and Full Commune. It does n
 attempts = min(2, stacks)
 ```
 
-Rerolls stop as soon as a replacement wins. If the original wins, Rescue expires unused. Settlement sees only the selected coherent result, so abandoned losses cannot award coins, Fortune, tokens, combinations, or Three Trees.
+Rerolls stop as soon as a replacement wins. If the original wins, Rescue expires unused. Settlement and reel reactions use only the selected coherent result, so abandoned losses cannot award coins, Fortune, tokens, combinations, Three Trees, or portrait animations.
 
 ### Fortune Burst
 
@@ -107,65 +142,98 @@ stacks      = min(3, stacks)
 
 Fortune Burst uses the final coherent win/loss state and adds to ordinary Fortune. It remains active during Ally Free Spins even though those spins otherwise isolate Fortune.
 
-## Current simulator report
+## Current full-system metrics
 
-The pre-reward exact model is deliberately lower because Mystery Tokens occupy reel stops. The new system's return comes from its modifiers, Fortune, and zero-cost chain spins.
+The 500,000-cycle Layer F run produced:
 
-| Exact component | RTP |
+| Metric | Result |
 | --- | ---: |
-| Base lines | 66.1169% |
-| Tree Awakening increment | 2.2844% |
-| Any-order combinations | 2.0631% |
-| Fortune increment before Mystery rewards | 1.5723% |
-| RTP before ordinary Commune Free Spins | 72.0367% |
-| Ordinary Commune Free Spins increment | 4.5461% |
-| Pre-reward baseline | 76.5828% |
+| Current-strip pre-award RTP | 79.2902% |
+| Full Mystery RTP without selected Ally | 95.3734% |
+| Increment over current-strip pre-award layer | +16.0832 points |
+| Mystery Free Spins awarded per paid spin | 0.060762 |
+| Mystery Free Spins played per paid spin | 0.060762 |
+| Paid cycles starting a Mystery chain | 5.1772% |
+| Average conditional Mystery chain length | 1.173646 |
+| Longest Mystery chain | 6 |
+| Fortune charge consumption | 4.7044% |
+| Ally trigger from paid spins | 1.6348% |
+| Ally trigger from Mystery spins | 1.7215% |
+| Ally Free Spins containing at least one Mystery Token | 60.0111% |
+| Average Mystery Tokens per Ally Free Spin | 0.875146 |
+| Maximum coherent spin | 168 coins |
+| Maximum complete paid cycle | 216 coins |
+| Maximum queued Mystery Free Spins | 4 |
+| Queue-cap frequency | 0.0000% |
 
-The seeded 50,000-cycle full-chain report is:
+### Modifier frequency
 
-| Mystery chain metric | Result |
-| --- | ---: |
-| Mystery Token, ticket, and Fortune increment | +8.7684% RTP |
-| Mystery Modifier increment | +14.1580% RTP |
-| New total before a specific Ally ability | 99.5092% RTP |
-| Mystery Free Spins awarded per paid spin | 0.104640 |
-| Mystery Free Spins played per paid spin | 0.104640 |
-| Paid cycles starting a Mystery chain | 8.2960% |
-| Average chain length when started | 1.2613 |
-| Longest observed chain | 8 |
-| Fortune charge consumption | 5.5185% of paid and Mystery spins |
-| Natural Ally trigger from paid spins | 1.6140% |
-| Natural Ally trigger from Mystery spins | 2.1024% |
-| Maximum coherent spin | 145 coins |
-| Maximum complete paid cycle | 206 coins |
+These are chain-inclusive awards per paid cycle in the same Layer F run.
 
-Modifier awards per paid cycle in the same seeded run:
+| Modifier | Awards per paid cycle | Applications per settled spin |
+| --- | ---: | ---: |
+| Spotlight | 0.049552 | 4.3747% |
+| Center Tree | 0.046978 | 4.1473% |
+| Double Commune | 0.049422 | 4.3632% |
+| Rescue Spin | 0.049744 | 4.3916% |
+| Fortune Burst | 0.049590 | 4.3780% |
 
-| Modifier | Awards per paid cycle |
-| --- | ---: |
-| Spotlight | 0.072400 |
-| Center Tree | 0.066360 |
-| Double Commune | 0.073880 |
-| Rescue Spin | 0.073320 |
-| Fortune Burst | 0.075180 |
+## Full Mystery RTP by Ally
 
-This elevated combined return is intentional for a fake-coin game. The paired token-only pass disables modifier consumption while preserving token Fortune, tickets, and Ally triggering. Its delta from the exact baseline is reported as the token increment; the full pass minus token-only is reported as the modifier increment.
+Each row uses 100,000 paid cycles through the full production Mystery and Ally state machines.
 
-## Ally interaction
+| Ally | Full RTP | Average paid-cycle payout | Mystery-origin Ally Free Spins | Paid-origin Ally Free Spins | Maximum paid cycle |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Sterling | 97.2830% | 4.86415 | 412 | 6,620 | 209 |
+| Ryan | 96.5688% | 4.82844 | 380 | 6,638 | 315 |
+| Cooper | 97.0928% | 4.85464 | 412 | 6,620 | 243 |
+| Cydney | 97.0204% | 4.85102 | 412 | 6,620 | 225 |
+| Gabi | 96.9740% | 4.84870 | 416 | 6,710 | 239 |
+| Kenly | 96.9152% | 4.84576 | 412 | 6,620 | 204 |
+| Ashley | 96.7224% | 4.83612 | 422 | 6,678 | 225 |
 
-The original seven Ally rules remain unchanged:
+The production range is **96.5688% to 97.2830%**, a spread of 0.7142 percentage points. The range is above the historical pre-Mystery Ally totals of roughly 95.46% to 95.55%, but it is no longer in runaway or constant-feature territory. No further award reduction is recommended.
 
-- Sterling accumulates loss Insurance.
-- Ryan doubles one stored early spin.
-- Cooper builds a loss ladder for the next win.
-- Cydney echoes 45% of the first win.
-- Gabi stores a win-only replay and keeps the better coherent result.
-- Kenly adds 37% to natural Small Wins.
-- Ashley stores one replay for the first loss.
+## Top 10 observed paid-cycle outcomes
 
-Mystery applies before ordinary Ally payout modifiers. Ashley and Gabi replacements reuse the Mystery result generator while explicitly suppressing a second Rescue loop. The outer Ally composite still retains exactly one final result. Tokens and Fortune Burst are taken from whichever Ally replay result is selected.
+| Root cycle | Payout | Mystery spins | Ally spins | Total feature spins | Tokens | Modifier awards |
+| ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 471,285 | 216 | 2 | 8 | 10 | 15 | Fortune Burst ×2, Center Tree ×2, Double Commune ×1 |
+| 334,598 | 215 | 2 | 10 | 12 | 12 | Rescue ×1, Spotlight ×1, Center Tree ×1 |
+| 97,856 | 204 | 0 | 6 | 6 | 5 | Center Tree ×2 |
+| 217,730 | 204 | 0 | 6 | 6 | 5 | None |
+| 144,866 | 199 | 0 | 6 | 6 | 6 | Spotlight ×1, Center Tree ×1 |
+| 385,366 | 193 | 1 | 8 | 9 | 10 | Rescue ×2, Center Tree ×1 |
+| 86,791 | 193 | 0 | 8 | 8 | 8 | Spotlight ×1 |
+| 395,008 | 190 | 0 | 8 | 8 | 5 | Rescue ×1, Spotlight ×1 |
+| 199,626 | 190 | 0 | 6 | 6 | 1 | None |
+| 495,303 | 188 | 0 | 4 | 4 | 2 | None |
 
-The exact Ally table printed by the simulator remains an isolated comparison on the new reel distribution. The full Mystery total intentionally does not claim an exact per-Ally combined RTP because the cross-product of Ally state, modifier stacks, Rescue candidates, Fortune, token tickets, and retriggers is handled by the seeded production-chain pass.
+## Tuning recommendation
+
+The initial audit justified Path B, a light reduction in Scatter appearance, because 2+ tokens occurred on 30.9896% of spins and visibly dominated ordinary play. The implemented 3/2/2 Scatter layout now places every award tier inside the intended band:
+
+- 2 tokens: 16.9271%;
+- 3 tokens: 4.4271%;
+- 4+ tokens: 0.5208%.
+
+Post-tuning chain behavior is short, no queue pressure exists, and all production Ally totals remain generous. Keep the current strip adjustment. Do not reduce Fortune, modifier strength, Rescue attempts, Spotlight caps, Double Commune caps, or ticket caps at this time.
+
+## Reaction reliability invariants
+
+The reel reaction controller enforces:
+
+- preload and decode before visible `src` replacement;
+- `small -> base`, `nice -> small -> base`, and `big -> nice -> small -> base` fallbacks;
+- successful and failed URL caches;
+- one generation token for timer and async-load cancellation;
+- deduplicated winning cells;
+- Tree, Mystery Token, and Center Tree exclusion;
+- popup close independence;
+- full restoration on the next reel reset;
+- final Rescue or Ally replacement result only.
+
+The deterministic stress test runs more than 100 start-clear cycles and rejects empty, null, undefined, or known-broken visible sources.
 
 ## Persistence invariants
 
@@ -182,15 +250,19 @@ Schema version 6 normalizes:
 
 Refill changes coins only. It does not clear tickets or modifiers. Legacy saves without Mystery state receive an empty queue.
 
-## Regression commands
+## Regression and audit commands
 
 ```bash
 npm test
 npm run test:mystery
+npm run test:reel-reactions
 npm run simulate
 npm run simulate:json
+npm run simulate:monte-carlo
+npm run simulate:mystery
 node tools/simulate.mjs --check --mystery-sessions=50000
-node tools/simulate.mjs --monte-carlo --sessions=200000
+node tools/simulate-mystery-scatter.mjs --cycles=50000 --ally-cycles=50000 --seed=1297634388
+node tools/simulate-mystery-scatter.mjs --cycles=500000 --ally-cycles=100000 --seed=1297634388 --json
 ```
 
-`--check` validates the 1-in-64 natural Tree trigger, exact token probability sum, noticeable two-token frequency, occasional three-token frequency, rare-but-possible four-plus results, production Mystery chain completion, queue cap, paid and Mystery Ally trigger paths, and reconciliation of the two Mystery RTP components.
+The audit workflow saves the exact report, Ally Monte Carlo report, 50,000-cycle human-readable Mystery report, and 500,000-cycle JSON report as GitHub Actions artifacts.

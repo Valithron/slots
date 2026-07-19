@@ -106,14 +106,21 @@ function reduced() {
 }
 
 function reactionAssets() {
-  const nice = app.reactions.resolveReactionAsset("STR", "nice");
-  const big = app.reactions.resolveReactionAsset("STR", "big");
-  assert.equal(nice.source, "nice");
-  assert.equal(big.source, "big");
-  assert.match(nice.path, /assets\/symbols\/sterling-nice\.svg\?v=portraits-v5/);
-  assert.match(big.path, /assets\/symbols\/sterling-big\.svg\?v=portraits-v5/);
+  const version = CONFIG.characterPresentation.assetVersion;
+  const sterlingNice = app.reactions.resolveReactionAsset("STR", "nice");
+  const sterlingBig = app.reactions.resolveReactionAsset("STR", "big");
+  const cydneyNice = app.reactions.resolveReactionAsset("CYD", "nice");
+  const cydneyBig = app.reactions.resolveReactionAsset("CYD", "big");
+  assert.equal(sterlingNice.source, "nice");
+  assert.equal(sterlingBig.source, "big");
+  assert.equal(cydneyNice.source, "nice");
+  assert.equal(cydneyBig.source, "big");
+  assert.equal(sterlingNice.path, `assets/symbols/sterling-nice.svg?v=${version}`);
+  assert.equal(sterlingBig.path, `assets/symbols/sterling-big.svg?v=${version}`);
+  assert.equal(cydneyNice.path, `assets/symbols/cydney-nice.svg?v=${version}`);
+  assert.equal(cydneyBig.path, `assets/symbols/cydney-big.svg?v=${version}`);
 
-  for (const filename of ["sterling-nice.svg", "sterling-big.svg"]) {
+  for (const filename of ["sterling-nice.svg", "sterling-big.svg", "cydney-nice.svg", "cydney-big.svg"]) {
     const svg = fs.readFileSync(new URL(`../assets/symbols/${filename}`, import.meta.url), "utf8");
     assert.match(svg, /<svg[\s>]/, `${filename} must contain an SVG root`);
     assert.match(svg, /data:image\/png;base64|<image[\s>]/, `${filename} must contain rendered image artwork`);
