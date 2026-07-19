@@ -6,52 +6,14 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out feature branch
+      - name: Check out repository
         uses: actions/checkout@v4
-        with:
-          ref: feature/ally-mystery-extensions-mobile-hud
-          fetch-depth: 0
-      - name: Update Ally Mystery regression expectations
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          path = Path('tools/mystery-tests.mjs')
-          text = path.read_text()
-          old = '''  assert.equal(tokenDone.mysterySettlement.freeSpinsAwarded, 1);
-  assert.equal(spinState.mystery.queuedFreeSpins, 1, "Mystery tickets earned in Ally Free Spins wait outside the feature");
-  assert.equal(spinState.mystery.modifierQueue[0].id, "spotlight");
-  assert.equal(spinState.freeSpinSession.presentationSpin.mysterySettlement.applied, true);'''
-          new = '''  assert.equal(tokenDone.mysterySettlement.freeSpinsAwarded, 1);
-  assert.equal(tokenDone.mysterySettlement.allySpinsAdded, 1);
-  assert.equal(tokenDone.mysterySettlement.ordinaryFreeSpinsAwarded, 0);
-  assert.equal(spinState.mystery.queuedFreeSpins, 0, "Mystery awards earned in Ally Free Spins extend the active feature");
-  assert.equal(spinState.freeSpinSession.remainingSpins, 4);
-  assert.equal(spinState.freeSpinSession.totalAwardedSpins, 5);
-  assert.equal(spinState.mystery.modifierQueue[0].id, "spotlight");
-  assert.equal(spinState.freeSpinSession.presentationSpin.mysterySettlement.applied, true);
-  assert.equal(spinState.freeSpinSession.presentationSpin.mysteryAward.allyExtension.applied, true);'''
-          if old in text:
-              text = text.replace(old, new, 1)
-              text = text.replace(
-                  '  assert.equal(spinState.mystery.queuedFreeSpins, 1, "Ally spins do not consume paused Mystery tickets");',
-                  '  assert.equal(spinState.mystery.queuedFreeSpins, 0, "Ally extension spins do not create or consume ordinary Mystery tickets");',
-                  1,
-              )
-              path.write_text(text)
-          PY
-          if [ -n "$(git status --porcelain tools/mystery-tests.mjs)" ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add tools/mystery-tests.mjs
-            git commit -m "Update Mystery tests for Ally extensions"
-            git push origin HEAD:feature/ally-mystery-extensions-mobile-hud
-          fi
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
