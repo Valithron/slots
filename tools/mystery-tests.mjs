@@ -230,9 +230,14 @@ function allyTokenRules() {
   const tokenDone = settle(spinState, tokenResult);
   assert.equal(tokenDone.spinType, "free");
   assert.equal(tokenDone.mysterySettlement.freeSpinsAwarded, 1);
-  assert.equal(spinState.mystery.queuedFreeSpins, 1, "Mystery tickets earned in Ally Free Spins wait outside the feature");
+  assert.equal(tokenDone.mysterySettlement.allySpinsAdded, 1);
+  assert.equal(tokenDone.mysterySettlement.ordinaryFreeSpinsAwarded, 0);
+  assert.equal(spinState.mystery.queuedFreeSpins, 0, "Mystery awards earned in Ally Free Spins extend the active feature");
+  assert.equal(spinState.freeSpinSession.remainingSpins, 4);
+  assert.equal(spinState.freeSpinSession.totalAwardedSpins, 5);
   assert.equal(spinState.mystery.modifierQueue[0].id, "spotlight");
   assert.equal(spinState.freeSpinSession.presentationSpin.mysterySettlement.applied, true);
+  assert.equal(spinState.freeSpinSession.presentationSpin.mysteryAward.allyExtension.applied, true);
 
   spinState.freeSpinSession = freeSpins.markFreeSpinPresented(spinState.freeSpinSession, tokenDone.id);
   const nextLocked = freeSpins.getLockedSpinState(spinState.freeSpinSession, spinState);
@@ -247,7 +252,7 @@ function allyTokenRules() {
   assert.equal(nextResult.mysteryActiveModifiers[0].id, "spotlight");
   assert.equal(mystery.commitSpinStart(spinState, nextResult), true);
   assert.equal(spinState.mystery.modifierQueue.length, 0, "the next Ally spin consumes modifiers earned inside the feature");
-  assert.equal(spinState.mystery.queuedFreeSpins, 1, "Ally spins do not consume paused Mystery tickets");
+  assert.equal(spinState.mystery.queuedFreeSpins, 0, "Ally extension spins do not create or consume ordinary Mystery tickets");
 }
 
 function spotlightRules() {
