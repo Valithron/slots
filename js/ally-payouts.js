@@ -155,13 +155,15 @@
   }
 
   function preserveDeferredOverflow(state, amount) {
-    if (!state?.mystery || amount <= 0) return;
+    if (!state?.mystery) return;
     const lastAward = state.mystery.lastAward && typeof state.mystery.lastAward === "object"
       ? state.mystery.lastAward
       : {};
+    const nextAmount = floor(amount);
+    if (nextAmount <= 0 && !("deferredOverflowFreeSpins" in lastAward)) return;
     state.mystery.lastAward = {
       ...lastAward,
-      deferredOverflowFreeSpins: floor(amount),
+      deferredOverflowFreeSpins: nextAmount,
     };
   }
 
@@ -218,7 +220,8 @@
       overflowMysterySpinsQueued: overflowResult.awarded,
       overflowMysterySpinsDeferred: deferredAdded,
       queuedFreeSpins: state.mystery.queuedFreeSpins,
-      capped: false,
+      capped: allySpinsAdded < requestedSpins || overflowResult.capped,
+      allyCapReached: allySpinsAdded < requestedSpins,
       allyExtension: extension,
     };
     const finalSettled = {
