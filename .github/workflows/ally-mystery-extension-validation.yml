@@ -34,9 +34,6 @@ jobs:
           python tools/apply-rescue-blank-rule.py
           rm -f tools/fix-rescue-patch-anchor.py
 
-      - name: Focused Rescue and Ally tests
-        run: node tools/mystery-tests.mjs && node tools/ally-mystery-extension-tests.mjs
-
       - name: Publish applied Rescue patch
         run: |
           if git diff --quiet; then
@@ -48,6 +45,9 @@ jobs:
           git add -A
           git commit -m "Preserve non-coin Rescue rewards"
           git push origin HEAD:feature/ally-mystery-extensions-mobile-hud
+
+      - name: Focused Rescue and Ally tests
+        run: node tools/mystery-tests.mjs && node tools/ally-mystery-extension-tests.mjs
 
       - name: Diff hygiene
         run: git diff --check origin/main...HEAD
