@@ -1,6 +1,9 @@
 name: Patch Ally Mystery Regression
 
 on:
+  push:
+    branches:
+      - feature/ally-mystery-extensions-mobile-hud
   pull_request:
     branches:
       - main
@@ -10,7 +13,7 @@ permissions:
 
 jobs:
   patch:
-    if: github.event.pull_request.head.ref == 'feature/ally-mystery-extensions-mobile-hud'
+    if: github.event_name == 'push' || github.event.pull_request.head.ref == 'feature/ally-mystery-extensions-mobile-hud'
     runs-on: ubuntu-latest
     steps:
       - name: Check out feature branch
