@@ -1,0 +1,31 @@
+name: Apply Rescue Blank Result Rule
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.ref == 'feature/ally-mystery-extensions-mobile-hud'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/ally-mystery-extensions-mobile-hud
+          fetch-depth: 0
+      - name: Apply patch
+        run: python tools/apply-rescue-blank-rule.py
+      - name: Run focused tests
+        run: node tools/mystery-tests.mjs && node tools/ally-mystery-extension-tests.mjs
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Preserve non-coin Rescue rewards"
+          git push origin HEAD:feature/ally-mystery-extensions-mobile-hud
