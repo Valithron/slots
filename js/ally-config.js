@@ -7,7 +7,7 @@
   const presentation = CONFIG.characterPresentation;
   CONFIG.characterPresentation = Object.freeze({
     ...presentation,
-    assetVersion: "portraits-v4",
+    assetVersion: presentation.assetVersion,
     characters: Object.freeze({
       ...presentation.characters,
       STR: Object.freeze({

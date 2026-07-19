@@ -57,6 +57,7 @@
         fortuneMeter: app.persistence.normalizeFortuneMeter(state.fortuneMeter),
         freeSpinSession: normalizeFreeSpinSession(state.freeSpinSession, state.pendingSpin),
         visualEffectsMode: state.visualEffectsMode,
+        mystery: app.mystery?.normalizeState?.(state.mystery) || state.mystery,
       }));
       return true;
     } catch {

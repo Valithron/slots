@@ -41,6 +41,8 @@ An available recorded asset overrides the synthesized cue. An event with no file
 
 This means the game remains fully playable with no `assets/audio` directory while still retaining the current sound design.
 
+Mystery gameplay registers semantic events for each token tier, modifier reveal, ticket award and start, Rescue, and Fortune Burst. Every event currently uses the same nonfatal synthesized-fallback path as the existing reel and feature cues.
+
 ## Unlock lifecycle
 
 `initialize()` never creates an audio context. `unlock()` creates or resumes one only after a meaningful user gesture. It also starts a silent one-frame buffer for iOS/WebKit compatibility. Rejected autoplay or resume attempts are absorbed and never interrupt gameplay.
@@ -93,6 +95,20 @@ Open `?qa=ally` or `?qa=audio` to see backend, context state, unlock state, mute
 
 The normal synthesized game cues are intentional product audio. Any later QA-only test tones should remain a separate mechanism.
 
+## Mystery event catalog
+
+| Event | Trigger |
+| --- | --- |
+| `mystery.token.one` | One visible token shimmer |
+| `mystery.token.two` | Two-token Fortune and modifier result |
+| `mystery.token.three` | Three-token ticket result |
+| `mystery.token.fourPlus` | Four-plus special result |
+| `mystery.modifier.reveal` | A modifier is revealed and queued |
+| `mystery.freeSpin.awarded` | One or more Mystery tickets are added |
+| `mystery.freeSpin.start` | A queued zero-cost spin starts |
+| `mystery.rescue.trigger` | Rescue begins a stored reroll presentation |
+| `mystery.fortuneBurst` | Fortune Burst points settle |
+
 ## Registering a real asset
 
 Add sources to the centralized event definition:
@@ -113,6 +129,6 @@ Add sources to the centralized event definition:
 
 Do not put filenames in gameplay modules. Once a source is available, it automatically replaces that event's synthesized fallback.
 
-## PR 1 limits
+## Remaining limits
 
-This foundation does not yet include the full semantic event catalog, authoritative exactly-once hooks, reel sequencing controller, scene transitions, music crossfades, ducking, voice priority, or the complete QA sequence console.
+The framework does not yet include recorded Mystery assets, music crossfades, ducking, voice priority, or a complete QA sequence console. Missing files remain safe and silent only when no synthesized fallback exists.

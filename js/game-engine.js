@@ -37,18 +37,21 @@
     ui.updateDisplay({
       state, phase, lineBet: lineBet(), totalBet: totalBet(), manualStopState: manualStops,
       fortuneSpinActive: Boolean(currentResult?.fortuneSpin?.active && phase !== GAME_STATES.IDLE),
+      mysterySpinActive: Boolean(currentResult?.spinType === "mystery-free" && phase !== GAME_STATES.IDLE),
     });
     app.qa?.updateSnapshot?.({ state, phase });
   }
   function setMessage(result) {
-    if (!result.totalWin) return ui.showMessage(result.spinType === "free" ? "No win on this free spin." : "No line this time.");
+    if (!result.totalWin) return ui.showMessage(result.spinType === "free"
+      ? "No win on this Ally Free Spin."
+      : result.spinType === "mystery-free" ? "No win on this Mystery Free Spin." : "No line this time.");
     const lines = result.lineWins.length ? `${result.lineWins.length} winning line${result.lineWins.length === 1 ? "" : "s"}` : "No ordinary line win";
     const combo = result.combinationWins.length ? ` plus ${result.combinationWins.map(win => win.name).join(", ")}` : "";
     ui.showMessage(`${lines}${combo}. You won ${ui.formatNumber(result.totalWin)} coins!`, true);
   }
   function clearPresentation() {
     cleanup?.(); cleanup = null; aborter = null;
-    ui.hideCelebration(); ui.hideReaction(); ui.hideCombinationCallout(); ui.hideFortuneResult(); ui.hideAllyCallout?.();
+    ui.hideCelebration(); ui.hideReaction(); ui.hideCombinationCallout(); ui.hideFortuneResult(); ui.hideAllyCallout?.(); ui.hideMysteryCallout?.();
     ui.clearAwakeningMark(); ui.clearCombinationMarks(); ui.clearTriggerTrees();
   }
   function signal(free = false) {
@@ -58,15 +61,17 @@
     return aborter.signal;
   }
   async function restore(result) {
+    ui.restoreCenterTreeVisual?.();
     if (!result?.targetStops || JSON.stringify(reels.getCurrentTopStops()) === JSON.stringify(result.targetStops)) return;
     ui.setSpinning(true);
     await reels.spinTo(result.targetStops, { anticipation: "none", reducedMotion: true, dramaEnabled: false, manualStopsEnabled: false });
     ui.setSpinning(false);
   }
   async function presentFeatures(result, free) {
-    if (!result.transformations.length && !result.combinationWins.length) return;
+    const hasExpandingWild = result.transformations.some(item => item.type === "expanding-wild");
+    if (!hasExpandingWild && !result.combinationWins.length) return;
     const s = signal(free); const reduced = app.effects.prefersReducedMotion();
-    if (result.transformations.some(item => item.type === "expanding-wild")) {
+    if (hasExpandingWild) {
       ui.markAwakeningSource(result, reels); audio.playAwakening();
       await app.effects.presentExpandingWild({ elements: ui.elements, reducedMotion: reduced || free, signal: s });
       ui.clearAwakeningMark();
@@ -119,10 +124,15 @@
       targetStops: override?.targetStops || reels.randomStops(),
       featureRolls: override?.featureRolls,
       state: spinState,
-      id: id(spinType === "paid" ? "spin" : "free"),
+      id: id(spinType === "paid" ? "spin" : spinType === "mystery-free" ? "mystery-free" : "ally-free"),
       spinType,
       referenceBet,
       totalAwardedSpins,
+      mysteryModifiers: app.mystery.peekModifierQueue(spinState),
+      mysteryAwardModifier: override?.mysteryAwardModifier,
+      mysteryAwardSpotlight: override?.mysteryAwardSpotlight,
+      mysteryRescueStops: override?.mysteryRescueStops,
+      mysteryRescueFeatureRolls: override?.mysteryRescueFeatureRolls,
     });
     app.qa?.recordResolvedResult?.(result, override);
     return result;
@@ -142,6 +152,24 @@
     await app.effects.wait(duration);
     ui.hideAllyCallout();
   }
+  async function presentMysteryCallouts(result, compact = false) {
+    const count = result?.mysteryTokenCount || 0;
+    if (count > 0) audio.playMysteryToken(count);
+    const settlement = result?.mysterySettlement;
+    if (settlement?.modifier) audio.playMysteryModifierReveal();
+    if (settlement?.freeSpinsAwarded > 0) audio.playMysteryFreeSpinAwarded();
+    if (result?.fortuneBurstPoints > 0) audio.playMysteryFortuneBurst();
+    const callouts = ui.buildMysteryCallouts?.(result) || [];
+    for (const callout of callouts) {
+      ui.showMysteryCallout(callout);
+      const reduced = app.effects.prefersReducedMotion();
+      const configured = reduced
+        ? CONFIG.mystery.presentation.reducedMotionDuration
+        : compact ? Math.min(440, CONFIG.mystery.presentation.revealDuration) : CONFIG.mystery.presentation.revealDuration;
+      await app.effects.wait(configured);
+      ui.hideMysteryCallout();
+    }
+  }
   function replayActivation(result) {
     if (result.allyReplay?.type === "gabi") return {
       allyId: "gabi", abilityName: CONFIG.allies.gabi.abilityName, activated: true,
@@ -153,6 +181,23 @@
     };
     return null;
   }
+  async function animateMysteryResult(result, { manualStopsEnabled = CONFIG.features.manualStops } = {}) {
+    ui.restoreCenterTreeVisual?.();
+    const rescue = result?.mysteryRescue;
+    if (!rescue || rescue.attemptsUsed <= 0) return spinAnimation(result, { manualStopsEnabled });
+    await spinAnimation(rescue.originalResult, { manualStopsEnabled });
+    ui.applyCenterTreeVisual?.(rescue.originalResult, reels);
+    for (const replacement of rescue.replacementResults) {
+      audio.playMysteryRescue();
+      ui.showMysteryCallout({ kicker: "Mystery Modifier", title: "Rescue Spin!", detail: "The losing result rewinds and rerolls once.", tone: "rescue" });
+      await app.effects.wait(app.effects.prefersReducedMotion() ? CONFIG.mystery.presentation.reducedMotionDuration : CONFIG.mystery.presentation.rescueDuration);
+      ui.hideMysteryCallout();
+      ui.restoreCenterTreeVisual?.();
+      await spinAnimation(replacement, { manualStopsEnabled: false });
+      ui.applyCenterTreeVisual?.(replacement, reels);
+    }
+    if (rescue.selected === "original") await restore(rescue.originalResult);
+  }
   async function animateAuthoritativeFreeResult(result) {
     if (result.allyEffect?.allyId === "ryan" && result.allyEffect.activated) {
       await presentAllyCallout({
@@ -162,26 +207,30 @@
         preSpin: true,
       });
     }
-    if (!result.allyReplay) return spinAnimation(result);
-    await spinAnimation(result.allyReplay.originalResult);
+    if (!result.allyReplay) return animateMysteryResult(result);
+    await animateMysteryResult(result.allyReplay.originalResult);
     await presentAllyCallout(replayActivation(result));
-    await spinAnimation(result.allyReplay.replacementResult);
+    await animateMysteryResult(result.allyReplay.replacementResult, { manualStopsEnabled: false });
     if (result.allyReplay.selected === "original") await restore(result.allyReplay.originalResult);
   }
-  async function paidSpin() {
+  async function baseSpin() {
     if (phase !== GAME_STATES.IDLE || activeSession()) return;
-    const cost = app.payouts.getTotalBet(state);
-    if (state.coins < cost) { ui.showMessage("Not enough coins. Lower the bet or refill."); return audio.playErrorSound(); }
+    const spinType = app.mystery.hasQueuedFreeSpin(state) ? "mystery-free" : "paid";
+    const referenceBet = app.payouts.getTotalBet(state);
+    const cost = spinType === "paid" ? referenceBet : 0;
+    if (spinType === "paid" && state.coins < cost) { ui.showMessage("Not enough coins. Lower the bet or refill."); return audio.playErrorSound(); }
     setPhase(GAME_STATES.SPINNING); ui.clearWins(); ui.clearFeaturePresentation(); ui.showMessage("The reels are turning…");
     try {
-      await app.bonuses.beforeSpin({ state, totalBet: cost });
-      const result = createResult({ spinType: "paid", spinState: state, referenceBet: cost });
+      await app.bonuses.beforeSpin({ state, totalBet: referenceBet });
+      const result = createResult({ spinType, spinState: state, referenceBet });
+      if (!app.mystery.commitSpinStart(state, result)) throw new Error("Mystery spin queue changed before the authoritative result was saved.");
+      if (spinType === "mystery-free") audio.playMysteryFreeSpinStart();
       app.payouts.consumeFortuneChargeState(state, result); state.coins -= result.coinCost; state.lastWin = 0; state.pendingSpin = result; currentResult = result; save(); render();
-      await spinAnimation(result); setPhase(GAME_STATES.RESOLVING);
+      await animateMysteryResult(result); ui.applyMysteryResultVisuals?.(result, reels); setPhase(GAME_STATES.RESOLVING);
       const before = app.payouts.normalizeFortuneMeter(state.fortuneMeter); const done = settle();
-      statistics.recordSpin({ wager: done.referenceBet, coinCost: done.coinCost, payout: done.totalWin, spinType: "paid" }); save();
+      statistics.recordSpin({ wager: done.referenceBet, coinCost: done.coinCost, payout: done.totalWin, spinType: done.spinType }); save(); render();
       ui.animateFortuneGain({ from: before.value, to: state.fortuneMeter.value, award: done.fortuneMeterAward, charged: state.fortuneMeter.charged });
-      await presentResult(done); await app.bonuses.afterSpin({ state, spinResult: done }); clearPresentation();
+      await presentMysteryCallouts(done); await presentResult(done); await app.bonuses.afterSpin({ state, spinResult: done }); clearPresentation();
       if (activeSession()) await showIntro(); else setPhase(GAME_STATES.IDLE, true);
     } catch (error) {
       console.error(error); aborter?.abort(); clearPresentation();
@@ -192,6 +241,7 @@
   async function showIntro() {
     const session = state.freeSpinSession; if (!session?.active) return;
     setPhase(GAME_STATES.BONUS, true); clearPresentation(); ui.hideFreeSpinLayer(); await restore(session.triggerResult);
+    ui.applyMysteryResultVisuals?.(session.triggerResult, reels);
     ui.markTriggerTrees(session.triggerTreeCells, session.triggerResult, reels);
     if (CONFIG.features.chooseYourAlly && !session.ally?.confirmed && !session.ally?.legacyNoAlly) {
       ui.showAllySelection(session);
@@ -207,12 +257,13 @@
     if (!activeSession()) return;
     state.freeSpinSession = app.freeSpins.markSummary(state.freeSpinSession); setPhase(GAME_STATES.BONUS, true); clearPresentation();
     await restore(state.freeSpinSession.lastResult); const summary = app.freeSpins.getSessionSummary(state.freeSpinSession);
+    ui.applyMysteryResultVisuals?.(state.freeSpinSession.lastResult, reels);
     ui.showFreeSpinSummary(summary, app.reactions.createSummaryReaction(state.freeSpinSession)); ui.setPrimaryAction("continue");
     ui.setControlsDisabled(true, state, { allowSpin: true }); ui.showMessage(`Commune Free Spins won ${ui.formatNumber(summary.accumulatedWin)} coins.`, summary.accumulatedWin > 0);
     audio.playFreeSpinSummary(); render();
   }
   async function presentFree(result) {
-    setPhase(GAME_STATES.FREE_SPINS, true); const s = signal(true); await presentFeatures(result, true);
+    setPhase(GAME_STATES.FREE_SPINS, true); ui.applyMysteryResultVisuals?.(result, reels); await presentMysteryCallouts(result, true); const s = signal(true); await presentFeatures(result, true);
     if (!s.aborted && result.freeSpinTrigger?.triggered) {
       ui.markTriggerTrees(result.freeSpinTrigger.treeCells, result, reels); ui.showRetrigger(result); audio.playRetrigger();
       await app.effects.wait(app.effects.prefersReducedMotion() ? 220 : CONFIG.characterPresentation.durations.retrigger, { signal: s });
@@ -238,8 +289,11 @@
             currentSession.status = FS.SPINNING; setPhase(GAME_STATES.FREE_SPINS); ui.clearWins(); ui.clearFeaturePresentation();
             const lockedState = app.freeSpins.getLockedSpinState(currentSession, state);
             const result = createResult({ spinType: "free", spinState: lockedState, referenceBet: currentSession.referenceBet, totalAwardedSpins: currentSession.totalAwardedSpins });
-            state.pendingSpin = result; currentResult = result; save(); render(); await animateAuthoritativeFreeResult(result);
+            if (!app.mystery.commitSpinStart(state, result)) throw new Error("Mystery modifier queue changed before the Ally result was saved.");
+            state.pendingSpin = result; currentResult = result; save(); render(); await animateAuthoritativeFreeResult(result); ui.applyMysteryResultVisuals?.(result, reels);
+            const before = app.payouts.normalizeFortuneMeter(state.fortuneMeter);
             const done = settle(); statistics.recordSpin({ wager: done.referenceBet, coinCost: 0, payout: done.totalWin, spinType: "free" }); save(); render();
+            ui.animateFortuneGain({ from: before.value, to: state.fortuneMeter.value, award: done.fortuneMeterAward, charged: state.fortuneMeter.charged });
             const activation = state.freeSpinSession?.ally?.lastActivation;
             const alreadyPresented = done.allyReplay || done.allyEffect?.allyId === "ryan";
             if (!alreadyPresented && activation?.activated) await presentAllyCallout(activation);
@@ -282,7 +336,7 @@
   function primary() {
     return app.gameFlow.routePrimaryAction({
       phase, freeSpinStatus: state.freeSpinSession?.status, reelsMoving: phase === GAME_STATES.SPINNING || state.freeSpinSession?.status === FS.SPINNING,
-      manualStopsEnabled: CONFIG.features.manualStops, onSpin: () => void paidSpin(), onStop: requestStop, onSkip: skip, onStart: startFreeSpins, onContinue: continueSummary,
+      manualStopsEnabled: CONFIG.features.manualStops, onSpin: () => void baseSpin(), onStop: requestStop, onSkip: skip, onStart: startFreeSpins, onContinue: continueSummary,
     });
   }
   function bet(delta) {
@@ -304,7 +358,7 @@
     const cost = app.payouts.getTotalBet(state);
     if (state.coins < cost) state.coins = cost;
     app.qa.queueScenario("paid", "three-trees");
-    save(); render(); void paidSpin();
+    save(); render(); void baseSpin();
     return { ok: true, message: "Three Trees queued through the real paid-spin path." };
   }
   function qaAddCoins() {
@@ -363,6 +417,61 @@
     save(); render(); app.qa.releaseNextStep();
     return { ok: true, message: `${CONFIG.allies[allyId].abilityName} prepared for the next Free Spin.` };
   }
+  function nextQaSpinType() {
+    if (activeSession()) return "free";
+    return app.mystery.hasQueuedFreeSpin(state) ? "mystery-free" : "paid";
+  }
+  function qaQueueMysteryModifier(modifierId) {
+    if (!CONFIG.mystery.normalModifierPool.includes(modifierId)) return { ok: false, message: "Choose a valid Mystery Modifier." };
+    const betweenAllySpins = activeSession() && [FS.INTRO, FS.READY].includes(state.freeSpinSession.status);
+    if (phase !== GAME_STATES.IDLE && !betweenAllySpins) return { ok: false, message: "Queue modifiers only while idle or between Ally Free Spins." };
+    app.mystery.queueModifier(state, {
+      id: modifierId,
+      stacks: 1,
+      characterKey: modifierId === "spotlight" ? "STR" : undefined,
+    });
+    save(); render();
+    return { ok: true, message: `${app.mystery.MODIFIER_NAMES[modifierId]} queued for the next eligible spin.` };
+  }
+  function qaSetMysteryFreeSpins(value) {
+    const count = app.mystery.setQueuedFreeSpins(state, value);
+    save(); render();
+    return { ok: true, message: `Mystery Free Spin queue set to ${count}.` };
+  }
+  function qaClearMysteryQueue() {
+    app.mystery.clearQueue(state); save(); render();
+    return { ok: true, message: "Mystery modifiers and Mystery Free Spins cleared." };
+  }
+  function qaTestMysteryRescue() {
+    const queued = qaQueueMysteryModifier("rescue-spin");
+    if (queued.ok === false) return queued;
+    app.qa.forceRescueTest();
+    if (nextQaSpinType() === "free") app.qa.releaseNextStep();
+    return { ok: true, message: "Rescue Spin queued with a forced loss followed by an authoritative winning reroll." };
+  }
+  function qaTestFortuneBurst(outcome) {
+    const queued = qaQueueMysteryModifier("fortune-burst");
+    if (queued.ok === false) return queued;
+    const spinType = nextQaSpinType();
+    app.qa.queueScenario(spinType, outcome === "loss" ? "loss" : "small-win");
+    if (spinType === "free") app.qa.releaseNextStep();
+    return { ok: true, message: `Fortune Burst ${outcome === "loss" ? "loss" : "win"} queued for the next ${spinType} spin.` };
+  }
+  function qaTestMysteryModifier(modifierId, scenarioId) {
+    const queued = qaQueueMysteryModifier(modifierId);
+    if (queued.ok === false) return queued;
+    const spinType = nextQaSpinType();
+    app.qa.queueScenario(spinType, scenarioId);
+    if (spinType === "free") app.qa.releaseNextStep();
+    return { ok: true, message: `${app.mystery.MODIFIER_NAMES[modifierId]} queued with a deterministic result for the next ${spinType} spin.` };
+  }
+  function qaTestMysteryAllyTrigger() {
+    if (phase !== GAME_STATES.IDLE || activeSession()) return { ok: false, message: "Finish or reset the current Ally feature first." };
+    app.mystery.setQueuedFreeSpins(state, Math.max(1, state.mystery?.queuedFreeSpins || 0));
+    app.qa.queueScenario("mystery-free", "three-trees");
+    save(); render();
+    return { ok: true, message: "A Mystery Free Spin that triggers Choose Your Ally is ready. Press Free Spin." };
+  }
   function qaResetFeature() {
     app.qa.cancelWait(); aborter?.abort(); clearPresentation();
     state.pendingSpin = null; state.freeSpinSession = null; state.lastWin = 0; currentResult = null; manualStops = null;
@@ -383,6 +492,13 @@
       addCoins: qaAddCoins,
       setOneSpinRemaining: qaSetOneSpinRemaining,
       forceAbility: qaForceAbility,
+      queueMysteryModifier: qaQueueMysteryModifier,
+      setMysteryFreeSpins: qaSetMysteryFreeSpins,
+      clearMysteryQueue: qaClearMysteryQueue,
+      testMysteryRescue: qaTestMysteryRescue,
+      testFortuneBurst: qaTestFortuneBurst,
+      testMysteryModifier: qaTestMysteryModifier,
+      testMysteryAllyTrigger: qaTestMysteryAllyTrigger,
       resetFeature: qaResetFeature,
     });
     document.addEventListener("keydown", event => {
@@ -402,6 +518,6 @@
     setPhase(GAME_STATES.FREE_SPINS, true); void freeLoop();
   }
   async function init() { ui.buildPaytable(); ui.buildCombinationReference(); bind(); await reels.buildReels(); await recover(); render(); }
-  app.game = { spin: paidSpin, handlePrimaryAction: primary, requestManualStop: requestStop, skipCelebration: skip, startFreeSpins, selectAlly, confirmAlly, continueFromSummary: continueSummary, adjustBet: bet, refill, getState: () => structuredClone(state), getPhase: () => phase, getManualStopState: () => reels.getManualStopState(), getSessionStatistics: statistics.snapshot };
+  app.game = { spin: baseSpin, handlePrimaryAction: primary, requestManualStop: requestStop, skipCelebration: skip, startFreeSpins, selectAlly, confirmAlly, continueFromSummary: continueSummary, adjustBet: bet, refill, getState: () => structuredClone(state), getPhase: () => phase, getManualStopState: () => reels.getManualStopState(), getSessionStatistics: statistics.snapshot };
   void init();
 })();

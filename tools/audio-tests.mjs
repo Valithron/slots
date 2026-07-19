@@ -95,6 +95,28 @@ function load(overrides = {}) {
 }
 {
   const { app } = load();
+  await app.audio.unlock();
+  const mysteryEvents = [
+    "mystery.token.one",
+    "mystery.token.two",
+    "mystery.token.three",
+    "mystery.token.fourPlus",
+    "mystery.modifier.reveal",
+    "mystery.freeSpin.awarded",
+    "mystery.freeSpin.start",
+    "mystery.rescue.trigger",
+    "mystery.fortuneBurst",
+  ];
+  for (const eventId of mysteryEvents) {
+    assert.ok(app.audioConfig.events[eventId], `${eventId} must be a registered semantic event`);
+    const handle = await app.audio.play(eventId);
+    assert.ok(handle, `${eventId} must have a safe synthesized fallback`);
+    assert.equal(app.audio.getAssets()[eventId], "synthetic-fallback");
+  }
+  app.audio.stopAll();
+}
+{
+  const { app } = load();
   app.audio.beginSpinSession("spin-1");
   assert.equal(app.audio.getStatus().spinId, "spin-1");
   app.audio.beginSpinSession("spin-2");

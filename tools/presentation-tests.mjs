@@ -9,6 +9,7 @@ await import("../js/reactions.js");
 await import("../js/free-spins.js");
 await import("../js/payouts.js");
 await import("../js/combination-clarity-payouts.js");
+await import("../js/mystery.js");
 await import("../js/game-flow.js");
 await import("../js/reels.js");
 
@@ -109,8 +110,8 @@ function reactionAssets() {
   const big = app.reactions.resolveReactionAsset("STR", "big");
   assert.equal(nice.source, "nice");
   assert.equal(big.source, "big");
-  assert.match(nice.path, /assets\/symbols\/sterling-nice\.svg\?v=portraits-v4/);
-  assert.match(big.path, /assets\/symbols\/sterling-big\.svg\?v=portraits-v4/);
+  assert.match(nice.path, /assets\/symbols\/sterling-nice\.svg\?v=portraits-v5/);
+  assert.match(big.path, /assets\/symbols\/sterling-big\.svg\?v=portraits-v5/);
 
   for (const filename of ["sterling-nice.svg", "sterling-big.svg"]) {
     const svg = fs.readFileSync(new URL(`../assets/symbols/${filename}`, import.meta.url), "utf8");

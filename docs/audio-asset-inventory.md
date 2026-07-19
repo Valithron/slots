@@ -24,6 +24,15 @@ All events are optional. `Missing` is the expected status until the separate ass
 | free-spins.start | Feature begins | Features | No | High | Missing |
 | free-spins.retrigger | Additional spins awarded | Features | No | High | Missing |
 | free-spins.summary | Feature total | Features | No | High | Missing |
+| mystery.token.one | One-token shimmer | Features | No | Medium | Missing |
+| mystery.token.two | Two-token reward | Features | No | High | Missing |
+| mystery.token.three | Three-token ticket reward | Features | No | High | Missing |
+| mystery.token.fourPlus | Four-plus special reward | Features | No | Critical | Missing |
+| mystery.modifier.reveal | Modifier reveal | Features | No | High | Missing |
+| mystery.freeSpin.awarded | Mystery ticket awarded | Features | No | High | Missing |
+| mystery.freeSpin.start | Mystery Free Spin begins | Features | No | High | Missing |
+| mystery.rescue.trigger | Rescue reroll begins | Features | No | High | Missing |
+| mystery.fortuneBurst | Fortune Burst settles | Features | No | High | Missing |
 
 ## Planned directory
 
@@ -37,6 +46,7 @@ assets/audio/
 ├── tree/
 ├── fortune/
 ├── free-spins/
+├── mystery/
 ├── allies/
 └── characters/
 ```

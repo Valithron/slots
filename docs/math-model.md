@@ -1,279 +1,196 @@
-# Commune Fortune Math Model
+# Commune Fortune math model
 
-## Locked targets
+## Production outcome space
 
-- Current pre-ally total RTP: approximately **94.16%**
-- Selected-ally total RTP target: **95.2% to 95.8%**
-- Preferred center: approximately **95.5%**
-- Maximum without explicit justification: **96.0%**
-- Ally parity spread target: no more than **0.10 percentage points** preferred, **0.15 points** maximum
-- Manual stopping, reactions, selection presentation, and mobile-safe visual effects: **0.0000% RTP effect**
-
-External grants and Refill are excluded from wager RTP.
-
-## Exact weighted outcome space
-
-Three 24-stop reels and four predetermined Tree Awakening rolls produce:
+The game uses three 24-stop circular reel strips, a visible three-symbol window per reel, five fixed paylines, and four predetermined Tree Awakening roll outcomes.
 
 ```text
-24 x 24 x 24 x 4 = 55,296 weighted outcomes
+24 × 24 × 24 × 4 = 55,296 exact weighted outcomes
 ```
 
-The simulator imports the production reel strips, payouts, feature settings, combination definitions, and ally parameter values. Its payout evaluator mirrors the production result pipeline and is guarded by deterministic source and exact-value tests.
+`tools/simulate.mjs` imports the production configuration and payout wrappers. The exact pass covers reel payouts, Tree Awakening, combinations, Fortune, the natural Three Trees trigger, bounded Commune Free Spins, isolated Ally state machines, and visible Mystery Token counts.
 
-## Current baseline
+Mystery modifiers and chained tickets add persistent state that is substantially larger than the existing exact feature solver. The simulator therefore adds a seeded production-path Monte Carlo pass for the full Mystery chain. The seed is fixed at `0x4d595354`, and `npm test` runs 50,000 paid-spin cycles in both full and token-only modes.
 
-At line bet 1 and total bet 5:
+## Mystery reel placement
 
-| Component | RTP |
+`MYS` is a real nonpaying Scatter symbol. It does not substitute and cannot produce an ordinary line win. Tokens count from the final coherent `originalMatrix` anywhere on the visible 3-by-3 grid.
+
+Reel one contains an adjacent Scatter pair plus one isolated Scatter. Reels two and three each contain three isolated Scatters. The adjacent pair is required because a single visible reel must be able to contribute two tokens to a four-plus result.
+
+| Visible tokens | Exact probability | Award |
+| ---: | ---: | --- |
+| 0 | 27.6693% | None |
+| 1 | 41.3411% | Presentation only |
+| 2 | 22.9818% | +10 Fortune and one normal modifier |
+| 3 | 6.8359% | +1 Mystery Free Spin and one normal modifier |
+| 4+ | 1.1719% | +2 Mystery Free Spins and one strong modifier, falling back to normal while the strong pool is empty |
+
+The exact base pass requests 0.091796875 Mystery Free Spins per paid spin and produces a modifier award on 30.9895833% of paid results.
+
+## Authoritative resolution order
+
+Every paid, Mystery, and Ally spin creates one complete pending result before animation.
+
+1. Select `paid`, `mystery-free`, or `free` spin type.
+2. Read and normalize all queued Mystery Modifiers.
+3. Read a charged Fortune state for paid and Mystery spins.
+4. Generate authoritative reel stops and the stored Tree Awakening roll.
+5. Apply Center Tree before line evaluation without changing the natural matrix.
+6. Evaluate line wins, combinations, natural Three Trees, and payout modifiers.
+7. If Rescue applies to a total loss, generate up to two stored replacements.
+8. Select one coherent result. Abandoned Rescue or Ally replay candidates remain nested recovery data only.
+9. Atomically consume the Mystery ticket when applicable and clear the active one-spin modifier queue.
+10. Save the pending result before presentation.
+11. Settle coins, ordinary Fortune, Fortune Burst, and explicit token Fortune once.
+12. Apply the final grid's Mystery award once, using its persisted award ID.
+13. Create or update the Ally session if the final natural grid qualifies.
+
+The result stores its consumed-ticket marker, active modifiers, Rescue candidates, selected replacement, token cells, award, strong fallback, and settlement status. Reloading never draws a new replacement or reapplies an award.
+
+## Mystery Free Spin state machine
+
+Mystery Free Spins use the same reel and payout generator as paid spins with `coinCost = 0` and `spinType = "mystery-free"`.
+
+They:
+
+- use the current line bet and all five paylines;
+- retain Wild substitution, Tree Awakening, and Commune combinations;
+- build ordinary Fortune;
+- consume a charged Fortune state and receive the 1.5x multiplier;
+- can trigger a new four-spin Choose Your Ally session from natural Three Trees;
+- can award more tokens, modifiers, and tickets.
+
+The global ticket queue is capped at 20. A Mystery spin consumes exactly one ticket before its pending result is saved. A Three Trees trigger pauses the remaining queue because the active Ally session owns the game loop. Clearing the Ally summary exposes the same persisted Mystery queue again.
+
+Ally Free Spins never consume Mystery tickets. Tokens earned there still settle normally, and their modifier queue is available to the next Ally spin. Tickets earned there wait until the active Ally session closes.
+
+## Modifier math
+
+### Spotlight
+
+Each character has an independent stack count.
+
+```text
+line multiplier = min(4, 1 + stacks)
+```
+
+The multiplier applies only to line wins whose paying symbol is the selected character. Tree Wilds completing that character's line inherit the same multiplier.
+
+### Center Tree
+
+The center resolved cell changes to `TOL` before paylines are evaluated unless the cell is already `TOL` or `MYS`. The original matrix remains untouched, so Center Tree never creates a natural Three Trees trigger or a natural Full Commune center condition.
+
+### Double Commune
+
+```text
+combination multiplier = min(4, 1 + stacks)
+```
+
+The multiplier applies to named Commune combinations and Full Commune. It does not modify ordinary lines.
+
+### Rescue Spin
+
+```text
+attempts = min(2, stacks)
+```
+
+Rerolls stop as soon as a replacement wins. If the original wins, Rescue expires unused. Settlement sees only the selected coherent result, so abandoned losses cannot award coins, Fortune, tokens, combinations, or Three Trees.
+
+### Fortune Burst
+
+```text
+win points  = 20 × stacks
+loss points = 10 × stacks
+stacks      = min(3, stacks)
+```
+
+Fortune Burst uses the final coherent win/loss state and adds to ordinary Fortune. It remains active during Ally Free Spins even though those spins otherwise isolate Fortune.
+
+## Current simulator report
+
+The pre-reward exact model is deliberately lower because Mystery Tokens occupy reel stops. The new system's return comes from its modifiers, Fortune, and zero-cost chain spins.
+
+| Exact component | RTP |
 | --- | ---: |
-| Base lines | 82.0023% |
-| Tree Awakening increment | 2.6215% |
-| Any-order combinations | 2.7980% |
-| Fortune Meter increment | 1.1016% |
-| RTP before free spins | 88.5234% |
-| Commune Free Spins increment | 5.6401% |
-| Current total RTP | 94.1636% |
-
-The natural Three Trees trigger remains exactly 1 in 64 paid spins. The bounded base feature has an average payout of 18.048387 coins, average length of 4.129032 spins, 19.0708% zero-pay frequency, and 6.1050% probability of at least one retrigger.
-
-## Shared ally settlement rules
-
-Only one ally is active per feature. Each spin starts from one coherent natural free-spin result containing line wins, combination wins, Tree state, retrigger data, and natural tier.
-
-All percentage and multiplier calculations use:
-
-```js
-Math.floor(baseAmount * configuredMultiplier)
-```
-
-End bonuses are credited after the final accepted free spin reduces `remainingSpins` to zero. They are added to browser coins and `session.accumulatedWin` exactly once. `endBonusPaid` prevents duplication.
-
-Replays are resolved before settlement. The original and replacement remain stored for recovery, but only the selected coherent result reaches settlement.
-
-## Ally state machines
-
-### Sterling: No Whammys
-
-State:
-
-```text
-lossCount
-insurancePot
-paid
-```
-
-After each final zero-pay spin:
-
-```text
-lossCount += 1
-insurancePot = min(
-  floor(1.5 x referenceBet),
-  floor(lossCount x 0.35 x referenceBet)
-)
-```
-
-The pot pays once at feature completion. Wins do not reset or increase it.
-
-Exact metrics:
-
-- Incremental RTP: **1.3906%**
-- Total RTP: **95.5542%**
-- Average Insurance Pot: **4.4500 coins**
-- Insurance cap frequency: **22.0691%**
-- Average insured losses: **2.7303**
-- Baseline zero-pay sessions rescued: **19.0708%**
-- Final zero-pay frequency: **0.0000%**
-- Standard deviation: **17.1166**
-
-### Ryan: Big Win
-
-At session confirmation, one integer from 1 through 4 is generated and stored. On that free-spin position:
-
-```text
-finalSpinPayout = floor(baseSpinPayout x 2)
-```
-
-The designation is revealed before the selected spin begins. It does not multiply retrigger counts, end bonuses, or Fortune.
-
-Exact metrics:
-
-- Incremental RTP: **1.3660%**
-- Total RTP: **95.5295%**
-- Marked-spin monetary hit rate: **33.8759%**
-- Average marked base payout: **4.3711 coins**
-- Zero-value marked spin rate: **66.1241%**
-- Maximum ally bonus: **101 coins**
-- Maximum feature payout: **2,121 coins**
-- Standard deviation: **23.3131**, highest of the seven
-
-### Cooper: Rage-Bait
-
-State is consecutive final losses, capped at three. The next winning spin uses:
-
-| Stored losses | Multiplier |
-| ---: | ---: |
-| 0 | 1x |
-| 1 | 1.3x |
-| 2 | 1.6x |
-| 3+ | 2x |
-
-After an empowered win, Rage resets to zero. Stored Rage expires at feature end.
-
-Exact metrics:
-
-- Incremental RTP: **1.2975%**
-- Total RTP: **95.4611%**
-- Average maximum Rage multiplier reached: **1.6818x**
-- Features ending with unused Rage: **67.1002%**
-- Expected 1.3x empowered wins per feature: **0.3888**
-- Expected 1.6x empowered wins per feature: **0.2055**
-- Expected 2x empowered wins per feature: **0.1033**
-- Average Rage bonus: **4.1521 coins**
-- Standard deviation: **21.5357**
-
-### Cydney: I’m Listening
-
-The first final monetary win stores its spin ID and payout. Later wins cannot replace it.
-
-```text
-echoBonus = floor(recordedPayout x 0.45)
-```
-
-The Echo pays once at feature completion.
-
-Exact metrics:
-
-- Incremental RTP: **1.3279%**
-- Total RTP: **95.4914%**
-- Features recording a win: **80.9292%**
-- Average recorded amount: **10.4425 coins**
-- Average Echo Bonus: **4.2492 coins**
-- No-Echo frequency: **19.0708%**
-- Maximum feature payout: **2,065 coins**
-- Standard deviation: **21.4539**
-
-### Gabi: Eww
-
-The starting unrestricted replay proposal produced only 0.2171% incremental RTP. Threshold changes could not reach parity without making the rule vague or excessively broad. The final mechanic preserves weak-win rejection but changes the replacement source to a win-only judgment pool.
-
-On the first accepted payout below 3x total bet:
-
-1. Store the original result.
-2. Generate and store a positive replacement result before animation.
-3. Compare monetary payout.
-4. Select the replacement only when it is strictly greater.
-5. Preserve all retrigger and feature data from the selected coherent result.
-6. Consume Eww regardless of improvement.
-
-Production uses bounded rejection sampling with 512 attempts and a deterministic positive fallback. The exact model uses the mathematically equivalent positive-outcome conditional distribution.
-
-Exact metrics:
-
-- Incremental RTP: **1.3007%**
-- Total RTP: **95.4642%**
-- Activation frequency: **69.9752%**
-- Average original weak win: **6.0722 coins per feature**
-- Average replacement payout: **9.0291 coins per feature**
-- Replay improves the result in **37.9575%** of features
-- Replay ties in **11.4718%** of features
-- Average net improvement: **3.9660 coins**
-- Average free spins: **4.1739**, slightly higher because the selected replacement may retrigger
-- Standard deviation: **20.5079**
-
-### Kenly: Big Lemons
-
-Qualification uses the natural pre-ally tier. For each natural Small Win:
-
-```text
-lemonBonus = floor(baseSpinPayout x 0.37)
-finalSpinPayout = baseSpinPayout + lemonBonus
-```
-
-The bonus cannot recursively change its own qualification.
-
-Exact metrics:
-
-- Incremental RTP: **1.3031%**
-- Total RTP: **95.4666%**
-- Average qualifying Small Wins: **1.2536 per feature**
-- Average Lemonade Bonus: **4.1699 coins**
-- Features receiving no Lemonade Bonus: **29.0352%**
-- Average bonus per qualifying spin: **3.3264 coins**
-- Standard deviation: **20.7610**
-
-### Ashley: Fastball
-
-The first natural zero-pay result is stored but abandoned. A replacement result is generated and stored before its animation. The replacement becomes the only accepted result for that position and may win, lose, retrigger, awaken the Tree, or trigger a combination.
-
-Exact metrics:
-
-- Incremental RTP: **1.3912%**
-- Total RTP: **95.5547%**
-- Activation frequency: **98.8783%**
-- Replay monetary win frequency: **33.8759%**
-- Replay retrigger frequency: **1.5625%**
-- Operational zero-pay rescue frequency: **6.3042%**
-- Final zero-pay frequency: **12.6104%**
-- Average Fastball improvement: **4.3221 coins**
-- Average free spins: **4.1587**
-- Standard deviation: **20.0844**
-
-## Tuning history
-
-| Ally | Initial setting | Initial total RTP | Final setting | Final total RTP |
-| --- | --- | ---: | --- | ---: |
-| Sterling | 0.5x per loss, 3x cap | 96.2194% | 0.35x per loss, 1.5x cap | 95.5542% |
-| Ryan | 5x marked spin | 99.6274% | 2x marked spin | 95.5295% |
-| Cooper | 1.5x, 2x, 3x ladder | 96.5880% | 1.3x, 1.6x, 2x ladder | 95.4611% |
-| Cydney | 50% Echo | 95.7516% | 45% Echo | 95.4914% |
-| Gabi | First win below 1x, ordinary replay | 94.3806% | First win below 3x, win-only replay | 95.4642% |
-| Kenly | 50% Small Win bonus | 96.1503% | 37% Small Win bonus | 95.4666% |
-| Ashley | One first-loss replay | 95.5547% | Unchanged | 95.5547% |
-
-Final parity spread:
-
-```text
-95.5547% - 95.4611% = 0.0936 percentage points
-```
-
-## Persistence and migration
-
-Schema version 6 stores the complete ally state inside the free-spin session. The selected ally and all hidden decisions are normalized but never rerolled.
-
-Legacy policy:
-
-- Existing sessions without an `ally` object are marked `legacyNoAlly`.
-- They continue under the prior free-spin math.
-- They do not show selection and do not receive an invented ally.
-- New sessions require selection and confirmation.
-
-## Fortune isolation
-
-Free spins still do not gain Fortune, consume a charged Fortune state, or receive the Fortune multiplier. Ally effects never read or write the Fortune Meter. A charged state waits for the next paid spin.
-
-## Simulator methodology
-
-The exact solver:
-
-1. Enumerates 55,296 weighted production outcomes.
-2. Solves the 101-state Fortune stationary distribution.
-3. Compresses free-spin outcomes by payout, natural tier, and retrigger state.
-4. Solves bounded transition states through the 20-spin cap.
-5. Adds ally-specific state such as losses, selected spin, Rage, first win, replay-used flags, and recorded amounts.
-6. Computes first and second payout moments, zero-pay probability, maxima, activation metrics, ally bonus, retriggers, average feature length, and cap frequency.
-7. Runs a seeded Monte Carlo comparison as an independent verification path.
-
-Median is not emitted. A full payout distribution across replay and recorded-value states would materially expand memory, while variance, zero-pay frequency, and maxima already capture the balancing distinctions used here.
+| Base lines | 66.1169% |
+| Tree Awakening increment | 2.2844% |
+| Any-order combinations | 2.0631% |
+| Fortune increment before Mystery rewards | 1.5723% |
+| RTP before ordinary Commune Free Spins | 72.0367% |
+| Ordinary Commune Free Spins increment | 4.5461% |
+| Pre-reward baseline | 76.5828% |
+
+The seeded 50,000-cycle full-chain report is:
+
+| Mystery chain metric | Result |
+| --- | ---: |
+| Mystery Token, ticket, and Fortune increment | +8.7684% RTP |
+| Mystery Modifier increment | +14.1580% RTP |
+| New total before a specific Ally ability | 99.5092% RTP |
+| Mystery Free Spins awarded per paid spin | 0.104640 |
+| Mystery Free Spins played per paid spin | 0.104640 |
+| Paid cycles starting a Mystery chain | 8.2960% |
+| Average chain length when started | 1.2613 |
+| Longest observed chain | 8 |
+| Fortune charge consumption | 5.5185% of paid and Mystery spins |
+| Natural Ally trigger from paid spins | 1.6140% |
+| Natural Ally trigger from Mystery spins | 2.1024% |
+| Maximum coherent spin | 145 coins |
+| Maximum complete paid cycle | 206 coins |
+
+Modifier awards per paid cycle in the same seeded run:
+
+| Modifier | Awards per paid cycle |
+| --- | ---: |
+| Spotlight | 0.072400 |
+| Center Tree | 0.066360 |
+| Double Commune | 0.073880 |
+| Rescue Spin | 0.073320 |
+| Fortune Burst | 0.075180 |
+
+This elevated combined return is intentional for a fake-coin game. The paired token-only pass disables modifier consumption while preserving token Fortune, tickets, and Ally triggering. Its delta from the exact baseline is reported as the token increment; the full pass minus token-only is reported as the modifier increment.
+
+## Ally interaction
+
+The original seven Ally rules remain unchanged:
+
+- Sterling accumulates loss Insurance.
+- Ryan doubles one stored early spin.
+- Cooper builds a loss ladder for the next win.
+- Cydney echoes 45% of the first win.
+- Gabi stores a win-only replay and keeps the better coherent result.
+- Kenly adds 37% to natural Small Wins.
+- Ashley stores one replay for the first loss.
+
+Mystery applies before ordinary Ally payout modifiers. Ashley and Gabi replacements reuse the Mystery result generator while explicitly suppressing a second Rescue loop. The outer Ally composite still retains exactly one final result. Tokens and Fortune Burst are taken from whichever Ally replay result is selected.
+
+The exact Ally table printed by the simulator remains an isolated comparison on the new reel distribution. The full Mystery total intentionally does not claim an exact per-Ally combined RTP because the cross-product of Ally state, modifier stacks, Rescue candidates, Fortune, token tickets, and retriggers is handled by the seeded production-chain pass.
+
+## Persistence invariants
+
+Schema version 6 normalizes:
+
+- `mystery.queuedFreeSpins`;
+- the modifier queue, stack caps, and Spotlight character IDs;
+- the last 64 applied Mystery award IDs;
+- the last applied award presentation record;
+- pending Rescue candidates and selected result;
+- the Mystery ticket-consumption marker;
+- explicit token and Fortune Burst point components;
+- strong-to-normal fallback metadata.
+
+Refill changes coins only. It does not clear tickets or modifiers. Legacy saves without Mystery state receive an empty queue.
 
 ## Regression commands
 
 ```bash
 npm test
-npm run test:allies
-node tools/simulate.mjs --check
-node tools/simulate.mjs --json
+npm run test:mystery
+npm run simulate
+npm run simulate:json
+node tools/simulate.mjs --check --mystery-sessions=50000
 node tools/simulate.mjs --monte-carlo --sessions=200000
 ```
 
-`--check` fails when baseline RTP drifts, the Three Trees trigger leaves 1 in 64, any ally leaves the 95.2% to 95.8% target, parity exceeds 0.10 percentage points, probabilities become invalid, or the feature cap contract changes.
+`--check` validates the 1-in-64 natural Tree trigger, exact token probability sum, noticeable two-token frequency, occasional three-token frequency, rare-but-possible four-plus results, production Mystery chain completion, queue cap, paid and Mystery Ally trigger paths, and reconciliation of the two Mystery RTP components.

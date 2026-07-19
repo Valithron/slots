@@ -18,6 +18,7 @@
       id: `${options.id}-${suffix}`,
       targetStops: overrides.targetStops || randomStops(options.rng || Math.random),
       allyBypass: true,
+      mysterySkipRescue: true,
     });
   }
 

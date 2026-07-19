@@ -22,6 +22,7 @@
       pendingSpin: null,
       fortuneMeter: normalizeFortuneMeter(null),
       freeSpinSession: null,
+      mystery: app.mystery?.createState?.() || { queuedFreeSpins: 0, modifierQueue: [], appliedAwardIds: [], lastAward: null },
     };
   }
 
@@ -40,11 +41,15 @@
     const paidSpinPoints = normalizePoints(award?.paidSpinPoints);
     const tierPoints = normalizePoints(award?.tierPoints);
     const combinationPoints = normalizePoints(award?.combinationPoints);
-    const computedTotal = paidSpinPoints + tierPoints + combinationPoints;
+    const fortuneBurstPoints = normalizePoints(award?.fortuneBurstPoints);
+    const mysteryTokenPoints = normalizePoints(award?.mysteryTokenPoints);
+    const computedTotal = paidSpinPoints + tierPoints + combinationPoints + fortuneBurstPoints + mysteryTokenPoints;
     return {
       paidSpinPoints,
       tierPoints,
       combinationPoints,
+      fortuneBurstPoints,
+      mysteryTokenPoints,
       jackpotCharge: award?.jackpotCharge === true,
       totalPoints: Number.isFinite(award?.totalPoints) ? normalizePoints(award.totalPoints) : computedTotal,
     };
@@ -79,13 +84,14 @@
     if (pendingSpin.settlementStatus && pendingSpin.settlementStatus !== "pending") return null;
     if (!Number.isFinite(pendingSpin.totalWin) || pendingSpin.totalWin < 0) return null;
 
-    const spinType = pendingSpin.spinType === "free" ? "free" : "paid";
+    const spinType = ["paid", "free", "mystery-free"].includes(pendingSpin.spinType) ? pendingSpin.spinType : "paid";
+    const fortuneEligible = spinType !== "free";
     const referenceBet = Number.isFinite(pendingSpin.referenceBet)
       ? Math.max(1, Math.floor(pendingSpin.referenceBet))
       : Number.isFinite(pendingSpin.wager)
         ? Math.max(1, Math.floor(pendingSpin.wager))
         : CONFIG.paylines.length;
-    const coinCost = spinType === "free"
+    const coinCost = spinType !== "paid"
       ? 0
       : Number.isFinite(pendingSpin.coinCost)
         ? Math.max(0, Math.floor(pendingSpin.coinCost))
@@ -94,18 +100,17 @@
     const preModifierWin = Number.isFinite(pendingSpin.preModifierWin)
       ? Math.max(0, Math.floor(pendingSpin.preModifierWin))
       : totalWin;
-    const fortuneSpinActive = spinType === "paid" && pendingSpin.fortuneSpin?.active === true;
+    const fortuneSpinActive = fortuneEligible && pendingSpin.fortuneSpin?.active === true;
     const multiplier = Number.isFinite(pendingSpin.fortuneSpin?.multiplier) && pendingSpin.fortuneSpin.multiplier > 0
       ? pendingSpin.fortuneSpin.multiplier
       : CONFIG.fortuneMeter.multiplier;
-    const normalizedAward = spinType === "free"
-      ? normalizeFortuneMeterAward(null)
-      : normalizeFortuneMeterAward(pendingSpin.fortuneMeterAward);
+    const normalizedAward = normalizeFortuneMeterAward(pendingSpin.fortuneMeterAward);
 
     return {
       ...pendingSpin,
       spinType,
       paidSpin: spinType === "paid",
+      mysteryFreeSpin: spinType === "mystery-free",
       coinCost,
       referenceBet,
       wager: referenceBet,
@@ -117,7 +122,7 @@
       lineWinTotal: Number.isFinite(pendingSpin.lineWinTotal) ? Math.max(0, Math.floor(pendingSpin.lineWinTotal)) : preModifierWin,
       combinationWinTotal: Number.isFinite(pendingSpin.combinationWinTotal) ? Math.max(0, Math.floor(pendingSpin.combinationWinTotal)) : 0,
       preModifierWin,
-      fortuneBonus: spinType === "free"
+      fortuneBonus: !fortuneEligible
         ? 0
         : Number.isFinite(pendingSpin.fortuneBonus)
           ? Math.max(0, Math.floor(pendingSpin.fortuneBonus))
@@ -127,9 +132,7 @@
         multiplier,
         consumedCharge: fortuneSpinActive && pendingSpin.fortuneSpin?.consumedCharge !== false,
       },
-      modifiers: spinType === "free"
-        ? []
-        : Array.isArray(pendingSpin.modifiers) ? pendingSpin.modifiers.map(modifier => ({ ...modifier })) : [],
+      modifiers: Array.isArray(pendingSpin.modifiers) ? pendingSpin.modifiers.map(modifier => ({ ...modifier })) : [],
       fortuneMeterAward: normalizedAward,
       freeSpinTrigger: normalizeFreeSpinTrigger(pendingSpin.freeSpinTrigger, spinType),
       naturalWinTier: typeof pendingSpin.naturalWinTier === "string" ? pendingSpin.naturalWinTier : (pendingSpin.winTier || "none"),
@@ -155,7 +158,14 @@
       status = remainingSpins > 0 ? app.freeSpins.FREE_SPIN_STATUSES.READY : app.freeSpins.FREE_SPIN_STATUSES.COMPLETE;
     }
     const triggerResult = session.triggerResult && typeof session.triggerResult === "object" && typeof session.triggerResult.id === "string"
-      ? { ...structuredClone(session.triggerResult), settlementStatus: "settled", spinType: "paid", paidSpin: true }
+      ? {
+        ...structuredClone(session.triggerResult),
+        settlementStatus: "settled",
+        spinType: session.triggerResult.spinType === "mystery-free" ? "mystery-free" : "paid",
+        paidSpin: session.triggerResult.spinType !== "mystery-free",
+        mysteryFreeSpin: session.triggerResult.spinType === "mystery-free",
+        coinCost: session.triggerResult.spinType === "mystery-free" ? 0 : Math.max(0, Math.floor(session.triggerResult.coinCost || session.referenceBet || 0)),
+      }
       : null;
     const presentationSpin = session.presentationSpin && typeof session.presentationSpin === "object" && typeof session.presentationSpin.id === "string"
       ? { ...structuredClone(session.presentationSpin), settlementStatus: "settled", spinType: "free", paidSpin: false, coinCost: 0 }
@@ -220,6 +230,7 @@
         pendingSpin: safePendingSpin,
         fortuneMeter: normalizeFortuneMeter(saved.fortuneMeter),
         freeSpinSession,
+        mystery: app.mystery?.normalizeState?.(saved.mystery) || saved.mystery || defaultState().mystery,
       };
     } catch {
       return defaultState();
@@ -238,6 +249,7 @@
         pendingSpin: state.pendingSpin,
         fortuneMeter: normalizeFortuneMeter(state.fortuneMeter),
         freeSpinSession: normalizeFreeSpinSession(state.freeSpinSession, state.pendingSpin),
+        mystery: app.mystery?.normalizeState?.(state.mystery) || state.mystery || defaultState().mystery,
       }));
       return true;
     } catch {

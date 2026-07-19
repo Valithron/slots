@@ -34,7 +34,7 @@
     const wildKey = CONFIG.expandingWild.symbolKey;
     if (keys.every(key => key === wildKey)) return { symbolKey: wildKey, multiplier: CONFIG.symbols[wildKey].payout };
     const target = keys.find(key => key !== wildKey);
-    if (!target) return null;
+    if (!target || CONFIG.symbols[target]?.paysLine === false || CONFIG.symbols[target]?.scatter === true) return null;
     return keys.every(key => key === target || key === wildKey)
       ? { symbolKey: target, multiplier: CONFIG.symbols[target].payout }
       : null;
@@ -212,11 +212,12 @@
 
   function createFortuneMeterAward({
     paidSpin = true,
+    eligibleSpin = paidSpin,
     naturalWinTier = WIN_TIERS.NONE,
     combinationWins = [],
     enabled = CONFIG.features.fortuneMeter,
   } = {}) {
-    if (!enabled || !paidSpin) {
+    if (!enabled || !eligibleSpin) {
       return { paidSpinPoints: 0, tierPoints: 0, combinationPoints: 0, jackpotCharge: false, totalPoints: 0 };
     }
     const gains = CONFIG.fortuneMeter.gains;
@@ -256,7 +257,7 @@
   }
 
   function consumeFortuneChargeState(state, spinResult) {
-    if (!state || spinResult?.spinType !== "paid" || !spinResult?.fortuneSpin?.consumedCharge) return false;
+    if (!state || !["paid", "mystery-free"].includes(spinResult?.spinType) || !spinResult?.fortuneSpin?.consumedCharge) return false;
     state.fortuneMeter = { value: 0, charged: false };
     return true;
   }
@@ -274,8 +275,10 @@
     referenceBet = null,
     totalAwardedSpins = 0,
   }) {
-    if (spinType !== "paid" && spinType !== "free") throw new Error(`Unsupported spinType: ${spinType}`);
+    if (!["paid", "free", "mystery-free"].includes(spinType)) throw new Error(`Unsupported spinType: ${spinType}`);
     const isPaid = spinType === "paid";
+    const isMysteryFree = spinType === "mystery-free";
+    const fortuneEligible = isPaid || isMysteryFree;
     const calculatedReferenceBet = Number.isFinite(referenceBet) && referenceBet > 0
       ? Math.floor(referenceBet)
       : getTotalBet(state);
@@ -295,7 +298,7 @@
     const combinationWinTotal = combinationWins.reduce((sum, win) => sum + win.payout, 0);
     const preModifierWin = lineWinTotal + combinationWinTotal;
     const naturalWinTier = classifyWinTier(preModifierWin, calculatedReferenceBet);
-    const fortuneSpin = isPaid
+    const fortuneSpin = fortuneEligible
       ? getFortuneSpinState(state, Boolean(featureFlags.fortuneMeter))
       : { active: false, multiplier: CONFIG.fortuneMeter.multiplier, consumedCharge: false };
     const totalWin = fortuneSpin.active ? Math.floor(preModifierWin * fortuneSpin.multiplier) : preModifierWin;
@@ -310,6 +313,7 @@
     }] : [];
     const fortuneMeterAward = createFortuneMeterAward({
       paidSpin: isPaid,
+      eligibleSpin: fortuneEligible,
       naturalWinTier,
       combinationWins,
       enabled: Boolean(featureFlags.fortuneMeter),
@@ -324,6 +328,7 @@
       createdAt,
       spinType,
       paidSpin: isPaid,
+      mysteryFreeSpin: isMysteryFree,
       coinCost: isPaid ? calculatedReferenceBet : 0,
       referenceBet: calculatedReferenceBet,
       wager: calculatedReferenceBet,
@@ -368,7 +373,7 @@
     applyFortuneMeterAward(state, pending.fortuneMeterAward);
 
     let freeSpinSettlement = null;
-    if (pending.spinType === "paid" && pending.freeSpinTrigger?.triggered && pending.freeSpinTrigger.awardedSpins > 0) {
+    if (["paid", "mystery-free"].includes(pending.spinType) && pending.freeSpinTrigger?.triggered && pending.freeSpinTrigger.awardedSpins > 0) {
       if (!state.freeSpinSession?.active || state.freeSpinSession.triggerSpinId !== pending.id) {
         state.freeSpinSession = app.freeSpins.createFreeSpinSession(pending);
       }

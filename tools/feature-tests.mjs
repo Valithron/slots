@@ -8,6 +8,7 @@ await import("../js/reactions.js");
 await import("../js/free-spins.js");
 await import("../js/payouts.js");
 await import("../js/combination-clarity-payouts.js");
+await import("../js/mystery.js");
 await import("../js/game-flow.js");
 await import("../js/persistence.js");
 await import("../js/visual-effects-settings.js");
@@ -24,7 +25,7 @@ function manifest(){
  assert.deepEqual(reactions.CHARACTER_KEYS,["STR","CYD","RYN","GAB","COP","KEN","ASH"]);
  reactions.CHARACTER_KEYS.forEach(k=>{const a=reactions.resolveReactionAsset(k,"base");assert.equal(a.source,"base");assert.match(a.path,/\?v=/);});
  assert.equal(reactions.versionAssetUrl("a.svg?x=1#x","v 2"),"a.svg?x=1&v=v%202#x");
- assert.equal(reactions.resolveReactionAsset("STR","nice").source,"base");
+ assert.equal(reactions.resolveReactionAsset("STR","nice").source,"nice");
  assert.equal(reactions.resolveReactionAsset("BAD","big").source,"generic");
 }
 function reactionSelection(){

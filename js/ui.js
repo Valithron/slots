@@ -57,7 +57,8 @@
     function buildPaytable() {
       elements.paytable.innerHTML = CONFIG.paytableOrder.map(key => {
         const symbol = CONFIG.symbols[key];
-        return `<div class="pay-card"><img src="${symbol.image}" alt=""><div><strong>${symbol.name}</strong><span>3 × ${symbol.payout}</span></div></div>`;
+        const rule = symbol.scatter ? "Counts anywhere" : `3 × ${symbol.payout}`;
+        return `<div class="pay-card${symbol.scatter ? " is-scatter" : ""}"><img src="${symbol.image}" alt=""><div><strong>${symbol.name}</strong><span>${rule}</span></div></div>`;
       }).join("");
     }
 
