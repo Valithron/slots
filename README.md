@@ -179,6 +179,8 @@ The **Mystery QA** section can force one, two, three, or four-plus tokens; queue
 6. Use **Set 1 Spin Left** to reach Insurance, Echo, or the summary quickly.
 7. Use **Reset Feature State** before switching to another ally.
 
+The current reel math has no standalone non-trigger Big Win. The QA Big Win case therefore produces a Big Win together with natural Three Trees instead of fabricating a payout outside production math.
+
 QA settings and queued cases use `sessionStorage`; actual game and feature state continue to use the normal reload-safe persistence layer.
 
 ## Commands
@@ -194,7 +196,7 @@ npm run simulate:json
 npm run simulate:monte-carlo
 npm run simulate:mystery
 node tools/simulate.mjs --check --mystery-sessions=50000
-node tools/simulate.mystery-scatter.mjs --cycles=50000 --seed=1297634388
+node tools/simulate-mystery-scatter.mjs --cycles=50000 --seed=1297634388
 node tools/simulate-mystery-scatter.mjs --cycles=500000 --ally-cycles=100000 --seed=1297634388 --json
 ```
 
