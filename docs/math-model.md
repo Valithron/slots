@@ -10,7 +10,7 @@ The game uses three 24-stop circular reel strips, a visible three-symbol window 
 
 `tools/simulate.mjs` imports the production configuration and payout wrappers. The exact pass covers reel payouts, Tree Awakening, combinations, Fortune, the natural Three Trees trigger, bounded Commune Free Spins, isolated Ally state machines, and visible Mystery Token counts.
 
-Mystery modifiers and chained tickets add persistent state that is substantially larger than the existing exact feature solver. The simulator therefore adds a seeded production-path Monte Carlo pass for the full Mystery chain. The seed is fixed at `0x4d595354`, and `npm test` runs 50,000 paid-spin cycles in both full and token-only modes.
+Mystery modifiers, chained tickets, and in-session Ally extensions add persistent state that is substantially larger than the existing exact feature solver. Seeded production-path Monte Carlo passes cover the full Mystery chain and the before-and-after Ally conversion. The established Mystery seed is `0x4d595354`; the Ally-extension audit seed is `1297634388`.
 
 ## Mystery reel placement
 
@@ -18,15 +18,15 @@ Mystery modifiers and chained tickets add persistent state that is substantially
 
 Reel one contains an adjacent Scatter pair plus one isolated Scatter. Reels two and three each contain three isolated Scatters. The adjacent pair is required because a single visible reel must be able to contribute two tokens to a four-plus result.
 
-| Visible tokens | Exact probability | Award |
-| ---: | ---: | --- |
-| 0 | 27.6693% | None |
-| 1 | 41.3411% | Presentation only |
-| 2 | 22.9818% | +10 Fortune and one normal modifier |
-| 3 | 6.8359% | +1 Mystery Free Spin and one normal modifier |
-| 4+ | 1.1719% | +2 Mystery Free Spins and one strong modifier, falling back to normal while the strong pool is empty |
+| Visible tokens | Exact probability | Outside an Ally feature | Inside an active Ally feature |
+| ---: | ---: | --- | --- |
+| 0 | 27.6693% | None | None |
+| 1 | 41.3411% | Presentation only | Presentation only |
+| 2 | 22.9818% | +10 Fortune and one normal modifier | +10 Fortune and one normal modifier |
+| 3 | 6.8359% | +1 ordinary Mystery Free Spin and one normal modifier | +1 Ally Free Spin and one normal modifier |
+| 4+ | 1.1719% | +2 ordinary Mystery Free Spins and one strong modifier, falling back to normal while the strong pool is empty | +2 Ally Free Spins and the same strong/fallback modifier rule |
 
-The exact base pass requests 0.091796875 Mystery Free Spins per paid spin and produces a modifier award on 30.9895833% of paid results.
+The exact base pass requests 0.091796875 free spins per paid spin and produces a modifier award on 30.9895833% of paid results. The destination of the free-spin component depends only on whether the originating result belongs to an active confirmed Ally session.
 
 ## Authoritative resolution order
 
@@ -40,13 +40,16 @@ Every paid, Mystery, and Ally spin creates one complete pending result before an
 6. Evaluate line wins, combinations, natural Three Trees, and payout modifiers.
 7. If Rescue applies to a total loss, generate up to two stored replacements.
 8. Select one coherent result. Abandoned Rescue or Ally replay candidates remain nested recovery data only.
-9. Atomically consume the Mystery ticket when applicable and clear the active one-spin modifier queue.
-10. Save the pending result before presentation.
-11. Settle coins, ordinary Fortune, Fortune Burst, and explicit token Fortune once.
-12. Apply the final grid's Mystery award once, using its persisted award ID.
-13. Create or update the Ally session if the final natural grid qualifies.
+9. Attach the Mystery award and, for an active Ally result, its extension plan.
+10. Atomically consume the Mystery ticket when applicable and clear the active one-spin modifier queue.
+11. Save the pending result before presentation.
+12. Settle coins, ordinary Fortune, Fortune Burst, and explicit token Fortune once.
+13. Apply a natural Ally retrigger, if present.
+14. Apply the Mystery award once, using its persisted award ID.
+15. Convert the free-spin component into the same Ally session up to the feature cap; preserve overflow as ordinary Mystery spins.
+16. Finalize an Ally end bonus only when no Ally spins remain.
 
-The result stores its consumed-ticket marker, active modifiers, Rescue candidates, selected replacement, token cells, award, strong fallback, and settlement status. Reloading never draws a new replacement or reapplies an award.
+The result stores its consumed-ticket marker, active modifiers, Rescue candidates, selected replacement, token cells, award, Ally-extension plan, strong fallback, and settlement and presentation statuses. Reloading never draws a new replacement, reapplies an award, duplicates a modifier, or re-adds an extension.
 
 ## Mystery Free Spin state machine
 
@@ -61,9 +64,39 @@ They:
 - can trigger a new four-spin Choose Your Ally session from natural Three Trees;
 - can award more tokens, modifiers, and tickets.
 
-The global ticket queue is capped at 20. A Mystery spin consumes exactly one ticket before its pending result is saved. A Three Trees trigger pauses the remaining queue because the active Ally session owns the game loop. Clearing the Ally summary exposes the same persisted Mystery queue again.
+The global ordinary ticket queue is capped at 20. A Mystery spin consumes exactly one ticket before its pending result is saved. A Three Trees trigger pauses the remaining queue because the active Ally session owns the game loop. Clearing the Ally summary exposes the same persisted Mystery queue again.
 
-Ally Free Spins never consume Mystery tickets. Tokens earned there still settle normally, and their modifier queue is available to the next Ally spin. Tickets earned there wait until the active Ally session closes.
+During an active Ally session, three- and four-plus-token awards no longer enter that ordinary queue unless the Ally safety cap has no capacity. The modifier still queues normally and applies to the next eligible Ally spin. Overflow first enters the ordinary queue; if that queue is already full, a persisted deferred-overflow lane drains after the queued tickets so no awarded spin is discarded.
+
+## Ally Mystery extension state machine
+
+The conversion extends the current session object. It preserves the session ID, selected Ally, confirmation and feature-started state, completed and remaining spins, total awarded spins, retrigger count, locked line bet, reference bet, feature win, contribution totals, trigger and presentation results, settlement markers, selected result IDs, modifier queue, and all Ally-specific state.
+
+Let:
+
+- `M` be `CONFIG.freeSpins.maximumAwardedSpins`;
+- `T` be total awarded spins after the current result and any natural retrigger;
+- `R` be the Mystery-requested extension, either 1 or 2.
+
+```text
+capacity = max(0, M - T)
+allySpinsAdded = min(R, capacity)
+overflowMysterySpins = R - allySpinsAdded
+```
+
+A natural +2 retrigger and a +2 Mystery extension therefore add four spins when capacity permits. The two reasons remain separate in authoritative result and presentation data.
+
+The plan records award ID, token count, requested spins, accepted Ally spins, queued and deferred overflow, modifier and Strong fallback, natural retrigger contribution, before-and-after remaining counts, before-and-after total-awarded counts, application status, presentation status, and settlement status.
+
+### Ally invariants
+
+- Sterling retains loss count, Insurance Pot, and paid state.
+- Ryan retains the originally selected boost spin and consumed state. An extension neither creates nor relocates a boost.
+- Cooper retains consecutive losses and Rage multiplier.
+- Cydney retains the first recorded winning spin, amount, Echo bonus, and paid state.
+- Gabi retains her one-use replay, original and replacement results, selected result, and improvement.
+- Kenly retains qualifying-win count and accumulated Lemonade bonus.
+- Ashley retains her one-use replay, original spin ID, replacement result, and improvement.
 
 ## Modifier math
 
@@ -107,9 +140,9 @@ stacks      = min(3, stacks)
 
 Fortune Burst uses the final coherent win/loss state and adds to ordinary Fortune. It remains active during Ally Free Spins even though those spins otherwise isolate Fortune.
 
-## Current simulator report
+## Established Mystery baseline
 
-The pre-reward exact model is deliberately lower because Mystery Tokens occupy reel stops. The new system's return comes from its modifiers, Fortune, and zero-cost chain spins.
+The pre-reward exact model is deliberately lower because Mystery Tokens occupy reel stops. The system's return comes from its modifiers, Fortune, and zero-cost chain spins.
 
 | Exact component | RTP |
 | --- | ---: |
@@ -121,13 +154,13 @@ The pre-reward exact model is deliberately lower because Mystery Tokens occupy r
 | Ordinary Commune Free Spins increment | 4.5461% |
 | Pre-reward baseline | 76.5828% |
 
-The seeded 50,000-cycle full-chain report is:
+The seeded 50,000-cycle full-chain report before in-feature conversion is:
 
 | Mystery chain metric | Result |
 | --- | ---: |
 | Mystery Token, ticket, and Fortune increment | +8.7684% RTP |
 | Mystery Modifier increment | +14.1580% RTP |
-| New total before a specific Ally ability | 99.5092% RTP |
+| Total before a specific Ally ability | 99.5092% RTP |
 | Mystery Free Spins awarded per paid spin | 0.104640 |
 | Mystery Free Spins played per paid spin | 0.104640 |
 | Paid cycles starting a Mystery chain | 8.2960% |
@@ -139,33 +172,22 @@ The seeded 50,000-cycle full-chain report is:
 | Maximum coherent spin | 145 coins |
 | Maximum complete paid cycle | 206 coins |
 
-Modifier awards per paid cycle in the same seeded run:
+The in-feature conversion is an intentional generosity increase. No compensating reduction is applied to Scatter frequency, Mystery awards, Ally abilities, modifiers, payouts, Fortune, starting spins, or natural retriggers.
 
-| Modifier | Awards per paid cycle |
-| --- | ---: |
-| Spotlight | 0.072400 |
-| Center Tree | 0.066360 |
-| Double Commune | 0.073880 |
-| Rescue Spin | 0.073320 |
-| Fortune Burst | 0.075180 |
+## Before-and-after Ally simulation
 
-This elevated combined return is intentional for a fake-coin game. The paired token-only pass disables modifier consumption while preserving token Fortune, tickets, and Ally triggering. Its delta from the exact baseline is reported as the token increment; the full pass minus token-only is reported as the modifier increment.
+`tools/simulate-mystery-scatter.mjs` uses the same production result generator, Mystery queue, Ally abilities, settlement, retriggers, feature cap, and exactly-once paths in both modes. `before` disables only in-feature conversion; `after` enables it. The report includes:
 
-## Ally interaction
+- RTP by Ally before and after;
+- average Ally spins and Mystery-added spins per feature;
+- feature extension and multiple-extension frequency;
+- average feature payout and zero-pay frequency by Ally and overall;
+- maximum observed feature length and payout;
+- natural retrigger, Mystery extension, and combined-event frequency;
+- feature-cap and overflow frequency;
+- Ryan boost activation frequency and Ryan RTP.
 
-The original seven Ally rules remain unchanged:
-
-- Sterling accumulates loss Insurance.
-- Ryan doubles one stored early spin.
-- Cooper builds a loss ladder for the next win.
-- Cydney echoes 45% of the first win.
-- Gabi stores a win-only replay and keeps the better coherent result.
-- Kenly adds 37% to natural Small Wins.
-- Ashley stores one replay for the first loss.
-
-Mystery applies before ordinary Ally payout modifiers. Ashley and Gabi replacements reuse the Mystery result generator while explicitly suppressing a second Rescue loop. The outer Ally composite still retains exactly one final result. Tokens and Fortune Burst are taken from whichever Ally replay result is selected.
-
-The exact Ally table printed by the simulator remains an isolated comparison on the new reel distribution. The full Mystery total intentionally does not claim an exact per-Ally combined RTP because the cross-product of Ally state, modifier stacks, Rescue candidates, Fortune, token tickets, and retriggers is handled by the seeded production-chain pass.
+The seed is written into every JSON report so all results are reproducible. See `docs/ally-mystery-extensions.md` for the full contract.
 
 ## Persistence invariants
 
@@ -180,17 +202,21 @@ Schema version 6 normalizes:
 - explicit token and Fortune Burst point components;
 - strong-to-normal fallback metadata.
 
-Refill changes coins only. It does not clear tickets or modifiers. Legacy saves without Mystery state receive an empty queue.
+The extension plan is nested in the authoritative spin and preserved by the existing free-spin presentation and result cloning. Deferred overflow is stored with the last Mystery award. Refill changes coins only and does not clear tickets, modifiers, extension state, or overflow. Legacy saves without Mystery state receive an empty queue.
 
 ## Regression commands
 
 ```bash
 npm test
 npm run test:mystery
+npm run test:ally-mystery
 npm run simulate
 npm run simulate:json
+npm run simulate:monte-carlo
 node tools/simulate.mjs --check --mystery-sessions=50000
 node tools/simulate.mjs --monte-carlo --sessions=200000
+node tools/simulate-mystery-scatter.mjs --cycles=50000 --ally-cycles=50000 --seed=1297634388
+node tools/simulate-mystery-scatter.mjs --cycles=500000 --ally-cycles=100000 --seed=1297634388 --json
 ```
 
-`--check` validates the 1-in-64 natural Tree trigger, exact token probability sum, noticeable two-token frequency, occasional three-token frequency, rare-but-possible four-plus results, production Mystery chain completion, queue cap, paid and Mystery Ally trigger paths, and reconciliation of the two Mystery RTP components.
+The deterministic suite validates 1-, 2-, 3-, and 4+-Token behavior, natural retrigger stacking, repeated extension chains, final-spin summary suppression, modifier consumption, all seven Ally-state invariants, Ryan's one-use boost, reload before and after application, cap overflow, deferred overflow, outside-feature behavior, QA controls, complete ability labels, flexible HUD width, and absence of horizontal overflow or ellipsis-inducing CSS.
