@@ -24,6 +24,7 @@
     "js/strong-mystery-integration.js",
     "js/strong-mystery-presentation.js",
     "js/strong-mystery.js",
+    "js/ally-feature-compact-ui.js",
     "js/game-engine-core.js",
   ];
   const load = src => new Promise((resolve, reject) => {

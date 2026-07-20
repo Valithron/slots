@@ -1,0 +1,61 @@
+name: Mobile UI Validation
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Diff hygiene
+        run: git diff --check origin/main...HEAD
+      - name: Feature tests
+        run: npm run test:features
+      - name: Presentation tests
+        run: npm run test:presentation
+      - name: Polish tests
+        run: npm run test:polish
+      - name: Ally tests
+        run: npm run test:allies
+      - name: Mystery tests
+        run: npm run test:mystery
+      - name: Ally Mystery tests
+        run: npm run test:ally-mystery
+      - name: Strong Mystery tests
+        run: npm run test:strong-mystery
+      - name: QA tests
+        run: npm run test:qa
+      - name: Reel reaction tests
+        run: npm run test:reel-reactions
+      - name: Audio tests
+        run: npm run test:audio
+      - name: Mobile presentation contracts
+        run: npm run test:mobile-ui
+      - name: Exact simulator check
+        run: node tools/simulate.mjs --check
+      - name: Seeded simulation
+        run: npm run simulate
+      - name: Seeded JSON simulation
+        run: npm run simulate:json > mobile-ui-simulation.json
+      - name: Monte Carlo simulation
+        run: npm run simulate:monte-carlo
+      - name: Upload simulation record
+        uses: actions/upload-artifact@v4
+        if: always() && hashFiles('mobile-ui-simulation.json') != ''
+        with:
+          name: mobile-ui-simulation
+          path: mobile-ui-simulation.json
+          if-no-files-found: error
