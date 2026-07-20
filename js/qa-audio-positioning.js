@@ -12,20 +12,21 @@
     const qaBadge = qaPanel.querySelector(".qa-badge");
     audioPanel.dataset.qaCollisionGuard = "true";
 
-    const collapsePrimaryPanel = () => {
+    const syncOpenState = () => {
+      document.body.classList.toggle("qa-audio-status-open", audioPanel.open);
       if (!audioPanel.open) return;
       qaPanel.classList.add("is-collapsed");
       qaBadge?.setAttribute("aria-expanded", "false");
     };
 
-    audioPanel.addEventListener("toggle", collapsePrimaryPanel);
+    audioPanel.addEventListener("toggle", syncOpenState);
     qaBadge?.addEventListener("click", () => {
       queueMicrotask(() => {
         if (!qaPanel.classList.contains("is-collapsed")) audioPanel.open = false;
       });
     });
 
-    collapsePrimaryPanel();
+    syncOpenState();
     return true;
   }
 
