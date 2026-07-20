@@ -93,9 +93,9 @@
 }
 
 @keyframes fortuneFavorLeafEarned {
-  0% { transform: scale(.72); filter: brightness(1.8); }
-  55% { transform: scale(1.2); filter: brightness(1.35); }
-  100% { transform: scale(1); filter: none; }
+  0% { transform: scale(.72); box-shadow: 0 0 12px rgba(255, 235, 151, .78), inset 0 1px rgba(255, 255, 255, .7); }
+  55% { transform: scale(1.2); box-shadow: 0 0 10px rgba(231, 189, 87, .7), inset 0 1px rgba(255, 255, 255, .66); }
+  100% { transform: scale(1); box-shadow: 0 0 8px rgba(231, 189, 87, .56), inset 0 1px rgba(255, 255, 255, .62); }
 }
 
 .fortune-favor-success-callout {
