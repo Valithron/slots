@@ -1,0 +1,42 @@
+name: Strong Mystery Validation
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Diff hygiene
+        run: git diff --check origin/main...HEAD
+      - name: Focused Strong tests
+        run: npm run test:strong-mystery
+      - name: Strong simulation smoke report
+        run: node tools/simulate-strong-mystery.mjs --cycles=50000 --ally-cycles=50000 --seed=1297634388 --json > strong-mystery-50k.json
+      - name: Strong simulation 500k paid and 100k Ally cycles
+        run: node tools/simulate-strong-mystery.mjs --cycles=500000 --ally-cycles=100000 --seed=1297634388 --json > strong-mystery-500k.json
+      - name: Matched before and after audit
+        run: node tools/simulate-strong-mystery-paired.mjs --cycles=500000 --ally-cycles=100000 --seed=1297634388 --json > strong-mystery-paired-500k.json
+      - name: Upload Strong reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: strong-mystery-reports
+          path: |
+            strong-mystery-50k.json
+            strong-mystery-500k.json
+            strong-mystery-paired-500k.json
+          if-no-files-found: error
