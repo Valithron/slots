@@ -5,7 +5,7 @@
   "type": "module",
   "description": "A private static slot-style game with Mystery Tokens, Strong Mystery Modifiers, authoritative math, Choose Your Ally, mobile-safe effects, and persistent chainable free spins.",
   "scripts": {
-    "test": "node tools/feature-tests.mjs && node tools/presentation-tests.mjs && node tools/polish-tests.mjs && node tools/ally-tests.mjs && node tools/mystery-tests.mjs && node tools/ally-mystery-extension-tests.mjs && node tools/strong-mystery-tests.mjs && node tools/qa-tests.mjs && node tools/reel-reaction-tests.mjs && node tools/audio-tests.mjs && node tools/simulate.mjs --check",
+    "test": "node tools/feature-tests.mjs && node tools/presentation-tests.mjs && node tools/polish-tests.mjs && node tools/ally-tests.mjs && node tools/mystery-tests.mjs && node tools/ally-mystery-extension-tests.mjs && node tools/strong-mystery-tests.mjs && node tools/qa-tests.mjs && node tools/reel-reaction-tests.mjs && node tools/audio-tests.mjs && node tools/mobile-ui-tests.mjs && node tools/simulate.mjs --check",
     "test:features": "node tools/feature-tests.mjs",
     "test:presentation": "node tools/presentation-tests.mjs",
     "test:polish": "node tools/polish-tests.mjs",
@@ -13,6 +13,7 @@
     "test:mystery": "node tools/mystery-tests.mjs",
     "test:ally-mystery": "node tools/ally-mystery-extension-tests.mjs",
     "test:strong-mystery": "node tools/strong-mystery-tests.mjs",
+    "test:mobile-ui": "node tools/mobile-ui-tests.mjs",
     "simulate": "node tools/simulate-strong-mystery.mjs --cycles=50000 --ally-cycles=50000 --seed=1297634388",
     "simulate:json": "node tools/simulate-strong-mystery.mjs --cycles=50000 --ally-cycles=50000 --seed=1297634388 --json",
     "simulate:monte-carlo": "node tools/simulate-strong-mystery.mjs --cycles=200000 --ally-cycles=100000 --seed=1297634388",
