@@ -319,7 +319,7 @@ body.ally-selection-open {
   display: grid !important;
   order: -1;
   grid-column: 1 / -1;
-  grid-template-columns: 42px minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   justify-self: stretch;
   gap: 9px;
