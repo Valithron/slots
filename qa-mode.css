@@ -138,6 +138,12 @@
   overflow-wrap: anywhere;
 }
 
+body.qa-audio-status-open .qa-panel .qa-badge {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
 @media (max-width: 520px) {
   .qa-panel { width: min(340px, calc(100vw - 16px)); }
   .qa-panel-body { max-height: 68vh; }
