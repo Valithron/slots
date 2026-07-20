@@ -86,6 +86,7 @@ includesAll(compactUi, [
   "restorePrimaryButton",
   "scrollIntoView",
   "positionedSessionId",
+  "session.status === FS.READY",
   "qa-primary-surface-open",
   "feature-summary-next",
   "previewActiveFeature",
