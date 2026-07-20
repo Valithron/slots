@@ -27,6 +27,9 @@
     "js/ally-feature-compact-ui.js",
     "js/help-accordion.js",
     "js/qa-audio-positioning.js",
+    "js/fortune-favor-core.js",
+    "js/fortune-favor-ui.js",
+    "js/fortune-favor-qa.js",
     "js/game-engine-core.js",
     "js/help-combo-inline.js",
   ];
