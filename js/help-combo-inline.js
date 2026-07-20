@@ -22,8 +22,10 @@
 
   function install() {
     exposeCommuneCombos();
+    const modal = document.getElementById("helpModal");
+    if (!modal) return;
     const observer = new MutationObserver(() => exposeCommuneCombos());
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(modal, { childList: true, subtree: true });
   }
 
   document.readyState === "loading"
