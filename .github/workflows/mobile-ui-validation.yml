@@ -1,0 +1,41 @@
+name: Mobile UI Validation
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Diff hygiene
+        run: git diff --check origin/main...HEAD
+      - name: Mobile presentation contracts
+        run: npm run test:mobile-ui
+      - name: Full regression suite
+        run: npm test
+      - name: Seeded simulation
+        run: npm run simulate
+      - name: Seeded JSON simulation
+        run: npm run simulate:json > mobile-ui-simulation.json
+      - name: Monte Carlo simulation
+        run: npm run simulate:monte-carlo
+      - name: Upload simulation record
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mobile-ui-simulation
+          path: mobile-ui-simulation.json
+          if-no-files-found: error
