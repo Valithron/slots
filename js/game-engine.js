@@ -26,6 +26,7 @@
     "js/strong-mystery.js",
     "js/ally-feature-compact-ui.js",
     "js/help-accordion.js",
+    "js/qa-audio-positioning.js",
     "js/game-engine-core.js",
   ];
   const load = src => new Promise((resolve, reject) => {
