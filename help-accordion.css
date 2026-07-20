@@ -1,0 +1,365 @@
+body.help-modal-open {
+  overflow: hidden;
+}
+
+#helpModal {
+  padding:
+    max(12px, env(safe-area-inset-top))
+    max(8px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom))
+    max(8px, env(safe-area-inset-left));
+}
+
+#helpModal .modal.help-reference-modal {
+  width: min(100%, 720px);
+  max-height: min(88dvh, 820px);
+  padding: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.help-reference-header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid rgba(255, 229, 145, .2);
+  background: linear-gradient(180deg, #122d52, #0d2341);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, .24);
+}
+
+.help-reference-header h2 {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(24px, 5vw, 34px);
+  color: #fff4be;
+}
+
+.help-reference-header .visual-effects-setting {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 12px;
+  background: rgba(3, 12, 26, .52);
+}
+
+.help-reference-header .visual-effects-setting label {
+  color: #eef6ff;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.help-reference-header .visual-effects-setting select {
+  min-width: 112px;
+  min-height: 44px;
+  border: 1px solid rgba(255, 255, 255, .18);
+  border-radius: 10px;
+  padding: 0 34px 0 10px;
+  color: #fff;
+  background: #183457;
+}
+
+.help-reference-header .visual-effects-setting select:focus-visible,
+.help-accordion-button:focus-visible,
+.help-reference-actions button:focus-visible {
+  outline: 3px solid #72e8ff;
+  outline-offset: 2px;
+}
+
+.help-accordion {
+  display: grid;
+  gap: 9px;
+  padding: 14px;
+}
+
+.help-accordion-item {
+  min-width: 0;
+  overflow: clip;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 14px;
+  background: rgba(4, 14, 30, .58);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .035);
+}
+
+.help-accordion-button {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  padding: 11px 14px;
+  color: #f8fbff;
+  background: linear-gradient(180deg, rgba(31, 70, 112, .78), rgba(18, 45, 78, .8));
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1.25;
+  text-align: left;
+  cursor: pointer;
+}
+
+.help-accordion-button:hover {
+  background: linear-gradient(180deg, rgba(41, 87, 136, .86), rgba(22, 55, 92, .86));
+}
+
+.help-accordion-button span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.help-accordion-chevron {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-right: 2px solid #fff0a2;
+  border-bottom: 2px solid #fff0a2;
+  transform: rotate(45deg);
+  transition: transform 160ms ease;
+}
+
+.help-accordion-button[aria-expanded="true"] .help-accordion-chevron {
+  transform: rotate(225deg);
+}
+
+.help-accordion-panel {
+  padding: 4px 15px 15px;
+  overflow: visible;
+}
+
+.help-accordion-panel[hidden] {
+  display: none !important;
+}
+
+.help-accordion-panel h3 {
+  margin: 16px 0 6px;
+  color: #fff0a2;
+  font-size: 15px;
+}
+
+.help-accordion-panel h4 {
+  margin: 0;
+  color: #f7fbff;
+  font-size: 14px;
+}
+
+.help-accordion-panel p,
+.help-accordion-panel li {
+  color: #c8d8ec;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.help-accordion-panel p {
+  margin: 10px 0 0;
+}
+
+.help-accordion-panel ul {
+  margin: 8px 0 0;
+  padding-left: 21px;
+}
+
+.help-accordion-panel li + li {
+  margin-top: 4px;
+}
+
+.combination-reference,
+.ally-ability-reference,
+.modifier-reference {
+  display: grid;
+  gap: 9px;
+  margin-top: 12px;
+}
+
+.combination-reference-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(108px, .72fr) minmax(0, 1.28fr);
+  align-items: center;
+  gap: 12px;
+  padding: 11px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 12px;
+  background: rgba(9, 25, 47, .76);
+}
+
+.combination-reference-name strong,
+.combination-reference-name small {
+  display: block;
+}
+
+.combination-reference-name small {
+  margin-top: 3px;
+  color: #fff0a2;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.combination-reference-symbols {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.combination-reference-symbols img {
+  width: 42px;
+  height: 42px;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.combination-reference-operator {
+  color: #fff0a2;
+  font-weight: 1000;
+}
+
+.combination-reference-full-content {
+  min-width: 0;
+}
+
+.combination-reference-symbols-full {
+  justify-content: flex-start;
+}
+
+.combination-reference-symbols-full img {
+  width: 34px;
+  height: 34px;
+}
+
+.combination-reference-full-content p {
+  margin-top: 7px;
+  font-size: 12px;
+}
+
+.ally-ability-card {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  align-items: start;
+  gap: 11px;
+  padding: 11px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 12px;
+  background: rgba(9, 25, 47, .76);
+}
+
+.ally-ability-card img {
+  width: 58px;
+  height: 58px;
+  object-fit: contain;
+}
+
+.ally-ability-card strong {
+  display: block;
+  margin-top: 2px;
+  color: #fff0a2;
+  font-size: 13px;
+}
+
+.ally-ability-card p,
+.modifier-reference-entry p {
+  margin-top: 5px;
+}
+
+.modifier-reference-entry {
+  padding: 10px 11px;
+  border-left: 3px solid #72e8ff;
+  border-radius: 0 10px 10px 0;
+  background: rgba(9, 25, 47, .68);
+}
+
+#strongModifierReference .modifier-reference-entry {
+  border-left-color: #e7bd57;
+}
+
+.help-reference-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  margin: 0;
+  padding: 12px 16px max(12px, env(safe-area-inset-bottom));
+  border-top: 1px solid rgba(255, 229, 145, .2);
+  background: linear-gradient(180deg, rgba(7, 20, 38, .96), #071426);
+  box-shadow: 0 -8px 18px rgba(0, 0, 0, .24);
+}
+
+.help-reference-actions .small-button {
+  min-width: 104px;
+  min-height: 44px;
+}
+
+@media (max-width: 430px) {
+  #helpModal .modal.help-reference-modal {
+    max-height: calc(100dvh - max(20px, env(safe-area-inset-top)) - max(20px, env(safe-area-inset-bottom)));
+    border-radius: 17px;
+  }
+
+  .help-reference-header {
+    padding: 14px 12px 11px;
+  }
+
+  .help-reference-header .visual-effects-setting {
+    gap: 8px;
+    padding: 8px 9px;
+  }
+
+  .help-reference-header .visual-effects-setting select {
+    min-width: 102px;
+  }
+
+  .help-accordion {
+    gap: 7px;
+    padding: 10px;
+  }
+
+  .help-accordion-button {
+    padding-inline: 11px;
+  }
+
+  .help-accordion-panel {
+    padding: 3px 11px 13px;
+  }
+
+  .combination-reference-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .combination-reference-symbols {
+    justify-content: flex-start;
+  }
+
+  .combination-reference-symbols img {
+    width: 38px;
+    height: 38px;
+  }
+
+  .combination-reference-symbols-full img {
+    width: 30px;
+    height: 30px;
+  }
+
+  .ally-ability-card {
+    grid-template-columns: 50px minmax(0, 1fr);
+  }
+
+  .ally-ability-card img {
+    width: 50px;
+    height: 50px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .help-accordion-chevron {
+    transition: none;
+  }
+}
