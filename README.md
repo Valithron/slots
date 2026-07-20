@@ -1,6 +1,6 @@
 # Commune Fortune
 
-Commune Fortune is a private, static 3-by-3 slot-style game built with plain HTML, CSS, and JavaScript. It uses fake coins only. There is no backend, framework, build process, purchase flow, cash-out, or runtime dependency.
+Commune Fortune is a private, static 3-by-3 slot-style game built with plain HTML, CSS, and JavaScript. It uses fake coins only. There is no backend, account system, purchase flow, cash-out, framework, bundler, database, or runtime dependency.
 
 ## Current feature set
 
@@ -10,177 +10,125 @@ Commune Fortune is a private, static 3-by-3 slot-style game built with plain HTM
 - Manual left-to-right reel stopping
 - Auto, Full, and Reduced visual-effects modes
 - Mobile WebKit compositing safeguards
-- Small, Nice, Big, and Commune Jackpot win tiers
+- Small, Nice, Big, and Commune Jackpot tiers
 - Tree of Life Wild and Tree Awakening
 - Any-order named Commune Line combinations and Full Commune
-- Fortune Meter with a 1.5x charged paid spin
-- Mystery Scatter Tokens that count anywhere on the visible grid
-- Persistent, stackable one-spin Mystery Modifiers
-- Chainable Mystery Free Spin tickets that use the ordinary base-game flow
-- Mystery-awarded spins that extend the active Ally feature up to its safety cap
-- Character Reaction Framework using the seven existing portraits
-- Commune Free Spins with retriggers, locked bets, persistence, and MVP summary
-- Choose Your Ally with seven mutually exclusive free-spin abilities
-- Exact transition simulator, seeded Monte Carlo verification, and deterministic regression tests
+- Fortune Meter with a 1.5x charged spin
+- Mystery Scatter Tokens anywhere on the visible grid
+- Five normal Mystery Modifiers
+- Seven Strong Mystery Modifiers
+- Chainable Mystery Free Spins
+- Mystery-awarded Ally extension spins
+- Character reaction portraits
+- Commune Free Spins with retriggers and a twenty-spin cap
+- Choose Your Ally with seven persistent feature abilities
+- Deterministic tests and seeded production-path simulation
 
 ## Choose Your Ally
 
-After a paid Three Trees trigger resolves, the player must select and confirm one Commune member before the free-spin intro begins. New sessions cannot start without a valid confirmed ally. The selected ally is saved before the first free spin and cannot change after the feature starts.
+A natural Three Trees trigger opens four Commune Free Spins. Before the feature starts, the player selects and confirms one Ally. The choice, locked bet, hidden rolls, replay results, streak state, recorded values, extension spins, and end-bonus flags persist across reload.
 
-| Ally | Ability | Final rule |
+| Ally | Ability | Rule |
 | --- | --- | --- |
-| Sterling | No Whammys | Each final losing spin builds Insurance at 0.35x total bet per loss, capped at 1.5x total bet, paid once at feature end. |
-| Ryan | Big Win | One of the first four free-spin positions is stored secretly. Its monetary payout is multiplied by 2x. A loss receives no benefit. |
-| Cooper | Rage-Bait | Consecutive losses prepare the next win at 1.3x, 1.6x, then 2x. Rage resets after that win and expires unused at feature end. |
-| Cydney | I’m Listening | The first final monetary win is recorded. The feature pays an Echo equal to 45% of that win at feature end. |
-| Gabi | Eww | The first win below 3x total bet is replayed from a win-only judgment pool. The coherent result with the greater monetary payout is retained. Ties retain the original. |
-| Kenly | Big Lemons | Every natural Small Win receives a 37% Lemonade Bonus. The tier is classified before the ally bonus. |
-| Ashley | Fastball | The first losing spin is replayed once. The original loss is abandoned, and only the replay result settles. |
+| Sterling | No Whammys | Losses build Insurance at 0.35x total bet per loss, capped at 1.5x, paid once at feature end. |
+| Ryan | Big Win | One stored position among the first four Free Spins pays 2x. |
+| Cooper | Rage-Bait | Consecutive losses prepare the next win at 1.3x, 1.6x, then 2x. |
+| Cydney | I’m Listening | The first final monetary win is recorded and pays a 45% Echo at feature end. |
+| Gabi | Eww | The first qualifying weak win is replayed from a win-only pool; the better coherent result is retained. |
+| Kenly | Big Lemons | Natural Small Wins receive a 37% Lemonade bonus. |
+| Ashley | Fastball | The first loss is replayed once and only the replacement settles. |
 
-All multipliers and percentages use integer coins and `Math.floor`. Only one ally is active per free-spin session. Ally abilities do not interact with one another and do not alter the Fortune Meter.
+Gabi and Ashley store both candidates and the selected result before presentation. Strong modifiers are applied coherently to both replay candidates before the final selection. Abandoned candidates never settle.
 
-### Selection and recovery
+## Mystery Tokens
 
-The session stores the pending selection, confirmation state, selected ally, hidden Ryan spin, replay results, streak state, recorded values, and end-bonus payment flags.
-
-- Reload before confirmation restores the selection screen.
-- Reload after confirmation restores the exact ally.
-- Reload during a replay settles the already stored coherent result once.
-- Reload before Insurance or Echo payment cannot duplicate the end bonus.
-- Legacy free-spin sessions created before this feature continue without an ally. No random ally is invented for an old session.
-
-## Authoritative replay model
-
-Ashley and Gabi produce a composite pending result before presentation begins. It contains the original result, replacement result, selected result identifier, and final coherent payout. The composite result is saved before either reel presentation runs.
-
-Only the selected result contributes payout, retriggers, Tree Awakening, combinations, feature totals, contribution statistics, and settlement. The abandoned result never settles.
-
-Gabi's production replacement generator draws until it obtains a positive result, up to 512 authoritative attempts. A deterministic positive fallback is stored if the limit is reached. The exact simulator models the equivalent conditional positive-outcome distribution.
-
-## Mystery Tokens and modifiers
-
-`MYS` uses `assets/symbols/scatter.svg` as a real reel symbol. Tokens count anywhere in the visible 3-by-3 grid and never need to land on a payline.
+`MYS` uses `assets/symbols/scatter.svg` as a reel symbol. Tokens count anywhere in the visible grid.
 
 | Visible tokens | Award |
 | ---: | --- |
-| 1 | Shimmer and semantic audio cue only |
+| 1 | Shimmer and semantic audio only |
 | 2 | +10 Fortune and one normal Mystery Modifier |
-| 3 | Outside an Ally feature: +1 ordinary Mystery Free Spin. Inside an active Ally feature: +1 additional Ally Free Spin. One normal modifier is also awarded. |
-| 4+ | Outside an Ally feature: +2 ordinary Mystery Free Spins. Inside an active Ally feature: +2 additional Ally Free Spins. One strong modifier is also awarded, with the existing normal fallback. |
+| 3 | +1 Mystery Free Spin, or +1 spin inside the active Ally feature, plus one normal modifier |
+| 4+ | +2 Mystery Free Spins, or +2 spins inside the active Ally feature, plus one Strong Mystery Modifier |
 
-All queued modifiers apply together to the next eligible paid, Mystery, or Ally spin and are consumed when that result is committed. Duplicate Spotlight, Double Commune, Rescue Spin, and Fortune Burst awards stack to their configured caps. Different Spotlight characters remain independent.
+Mystery Free Spins cost zero coins, retain ordinary base-game math, build and consume Fortune, can award more tokens, and can trigger Choose Your Ally. During an active Ally feature, Mystery spin awards extend the same selected Ally session. Cap overflow is preserved as ordinary Mystery Free Spins after the feature.
 
-| Modifier | One-spin rule |
+## Normal Mystery Modifiers
+
+| Modifier | Rule |
 | --- | --- |
-| Spotlight | The selected character's line wins pay 2x, upgrading to 3x and 4x. Tree Wilds completing that character's line benefit. |
-| Center Tree | The center cell becomes a Tree Wild before line evaluation unless it is already a Tree or Mystery Token. It never creates a natural Three Trees trigger. |
-| Double Commune | Named Commune combinations, including Full Commune, pay 2x, upgrading to 3x and 4x. Ordinary line wins are unchanged. |
-| Rescue Spin | Rerolls only a truly blank zero-coin result. It stops on a coin win, 2+ Mystery Tokens, natural Three Trees, Fortune Burst, or another persistent mechanical award. One-token shimmer may still reroll. |
-| Fortune Burst | Adds +20 Fortune after a win or +10 after a loss per stack, capped at three stacks. |
+| Spotlight | The selected character's ordinary line wins pay 2x, stacking to 3x and 4x. |
+| Center Tree | The center becomes a payout Wild unless already Tree or Mystery. It cannot create natural Three Trees. |
+| Double Commune | Named Commune combinations pay 2x, stacking to 3x and 4x. |
+| Rescue Spin | Rerolls only a truly blank result. Stacks provide up to two attempts. |
+| Fortune Burst | Adds persistent Fortune after the final result. |
 
-Rescue Spin defines **blank** as zero coins and no persistent mechanical reward. A result with 2+ Mystery Tokens, Mystery Fortune, a queued modifier award, Mystery or Ally spins, a natural trigger or retrigger, Fortune Burst, or another persistent feature award is kept and settled. Stacked Rescue attempts stop at the first candidate with either coins or a meaningful non-coin reward. One Mystery Token remains presentation-only and may still be rerolled.
+A result is truly blank only when it has zero coins and no meaningful persistent reward. Rescue preserves two or more Tokens, natural Three Trees, Mystery or Ally spins, modifiers, Fortune Burst, a real Fortune Flood increase, and other persistent awards. One Token alone may still reroll.
 
-Mystery Free Spins outside an Ally feature remain ordinary zero-cost base-game spins. During an active Commune Ally feature, a 3-Token or 4+-Token free-spin award instead extends the same Ally session immediately. The selected Ally, locked line bet, reference bet, accumulated feature state, modifier queue, automatic progression, and exactly-once settlement are preserved. Natural Three Trees retriggers and Mystery extensions stack. Only overflow beyond the twenty-spin Ally cap is preserved as ordinary Mystery Free Spins for after the summary.
+## Strong Mystery Modifiers
 
-### Mystery extensions inside Ally features
+Four or more Tokens draw independently from seven equally weighted Strong Modifiers. Repeats, self-repeats, and chains are allowed. There is no bag, cooldown, or loop suppression.
 
-The conversion extends the existing session object. It never creates a second Ally selection or intro. Three Tokens add one Ally spin. Four or more add two. Total Awarded and Free Spins update immediately, extension spins count toward Spins Played and Feature Win, and further Tokens or natural retriggers may chain.
+| Strong Modifier | One-spin rule |
+| --- | --- |
+| Golden Payline | One saved payline pays 4x on ordinary line wins. |
+| Fortune Flood | Final current-spin money pays 2x and settled Fortune cannot finish below 50. |
+| Scatter Magnet | Adds two non-destructive Mystery Token overlays. |
+| Commune Gathering | One saved named group pays a separate guaranteed 3x combination bonus. |
+| Sevenfold Fortune | One saved character pays 3x, or 7x for three natural copies. |
+| Full Fortune | Doubles final money, Fortune points, Mystery spins, and eligible Ally trigger or extension spins once. |
+| Commune Chaos | Three distinct saved effects strike together from a seven-effect Chaos pool. |
 
-All seven Ally states remain continuous. Sterling keeps his Insurance Pot, Cooper keeps Rage, Cydney cannot record a second first win, Gabi and Ashley cannot regain their replays, Kenly keeps Lemonade totals, and Ryan's stored one-use boost is neither duplicated nor silently moved to an extension spin.
+Strong modifiers are atomic instances stored separately from the normal stackable queue. Their line, character, group, and Chaos selections are made at award time and do not redraw after reload. Candidate-dependent overlay and Wild Spark cells are stored inside each authoritative candidate.
 
-The authoritative pending result stores requested spins, accepted Ally spins, cap overflow, modifier and fallback state, before-and-after counters, and application, presentation, and settlement status before presentation begins. Reload cannot lose or duplicate the award. See `docs/ally-mystery-extensions.md` for the exact ordering, cap formula, persistence invariants, and reproducible before-and-after simulation contract.
+See [Strong Mystery Modifiers](docs/strong-mystery-modifiers.md) for exact rules, evaluation order, Rescue behavior, persistence invariants, QA, and simulation fields. See [Strong Mystery simulation contract](docs/strong-mystery-simulation.md) for the detailed and matched audit methods.
 
-## Commune Free Spins
+## Evaluation and settlement
 
-A paid spin triggers four free spins when `originalMatrix` contains at least one natural Tree on each reel. The same natural event during a free spin awards two additional spins, with a maximum of twenty total awarded spins.
+The natural matrix remains authoritative for natural Mystery Tokens, named combinations, Three Trees, Tree Awakening eligibility, and Sevenfold natural-trio checks. Payout-only transformations and non-destructive overlays are applied afterward. Line multipliers multiply rather than add. Gathering is represented in the combination payout collection. Fortune Flood and Full Fortune apply only after the coherent current-spin payout is known.
 
-Ally Free Spins retain all paylines, Wild substitution, Tree Awakening, combinations, win tiers, reactions, manual stopping, and Mystery Tokens. They cost zero coins, lock the triggering line bet and reference bet, and keep their ordinary Fortune isolation. Explicit Mystery Token Fortune and Fortune Burst awards still add Fortune during the feature.
+The pending result stores natural and resolved matrices, overlays, transformations, modifier instances, replay candidates, Rescue candidates, selected result ID, token awards, Ally extensions, cap overflow, and settlement status. A committed result settles once. Reload never redraws or pays an abandoned candidate.
 
-## Mobile presentation boundary
+## Named Commune combinations
 
-Choose Your Ally adds static cards, borders, opacity transitions, checkmarks, a compact HUD, and short callouts. The active Ally occupies a complete flexible HUD row. Its name and complete ability label use the available width and may wrap naturally without ellipsis, letter clipping, horizontal page overflow, or collision with Free Spins, Total Awarded, Feature Win, or Locked Bet.
+KPs, Walls, Jaaps, Brotherhood, Wives’ Circle, and Household trigger when their required symbols appear in any order across the middle Commune Line. Full Commune requires all seven members in the visible grid and the Tree in the exact center.
 
-The selection screen supports touch, native keyboard focus, narrow layouts, safe-area behavior, Safari-style text scaling, portrait fallback, and reduced motion. Existing portrait fallback behavior remains in force. No alternate reaction art is required.
+## Fortune Meter
 
-## Exact math
-
-At line bet 1 and total bet 5, the simulator still enumerates all 55,296 reel-stop and Tree-roll outcomes. It reports the pre-reward reel model exactly, including token-count frequency, then runs deterministic paid-spin cycles through the production Mystery queue, Fortune, Rescue, Ally-trigger, and in-session extension paths.
-
-### Exact visible-grid frequencies
-
-| Mystery Tokens | Exact frequency |
-| ---: | ---: |
-| 0 | 27.6693% |
-| 1 | 41.3411% |
-| 2 | 22.9818% |
-| 3 | 6.8359% |
-| 4+ | 1.1719% |
-
-The exact reel pass requests 0.091797 Mystery Free Spins per paid spin and awards a modifier on 30.9896% of paid results. Deliberate adjacent Scatter placement on reel one makes four-token results genuinely possible while keeping them rare.
-
-### Seeded production-chain report
-
-The established Mystery baseline uses seed `0x4d595354`. At 50,000 paid-spin cycles before in-feature conversion:
-
-| Metric | Result |
-| --- | ---: |
-| Pre-reward reel, Fortune, and ordinary Commune Free Spins RTP | 76.5828% |
-| Mystery Token, ticket, and Fortune increment | +8.7684% |
-| Mystery Modifier increment | +14.1580% |
-| Total RTP before selecting a specific Ally ability | 99.5092% |
-| Mystery Free Spins played per paid spin | 0.104640 |
-| Paid cycles starting a Mystery chain | 8.2960% |
-| Average conditional Mystery chain length | 1.2613 spins |
-| Longest observed chain | 8 spins |
-| Fortune charge consumption frequency | 5.5185% |
-| Ally trigger frequency from paid spins | 1.6140% |
-| Ally trigger frequency from Mystery Free Spins | 2.1024% |
-| Maximum coherent spin | 145 coins |
-| Maximum complete paid-spin cycle | 206 coins |
-
-The in-feature conversion is an intentional generosity increase and does not reduce Scatter frequency, Mystery awards, Ally strength, modifiers, payouts, Fortune, starting spins, or natural retriggers. `tools/simulate-mystery-scatter.mjs` produces the required reproducible before-and-after RTP and feature metrics for every Ally using seed `1297634388`.
-
-See `docs/math-model.md` and `docs/ally-mystery-extensions.md` for state definitions, settlement rules, cap handling, Ally-specific invariants, and simulator output fields.
+Paid and Mystery Free Spins build Fortune. At 100, the next eligible spin becomes a 1.5x Fortune Spin and consumes the charge. Ally Free Spins ordinarily isolate Fortune, except explicit Mystery Token Fortune, Fortune Burst, Full Fortune doubling, and Fortune Flood's persistent floor behavior.
 
 ## Hidden QA mode
 
-Choose Your Ally can be tested without waiting for a natural Three Trees result. Add `?qa=ally` to the page URL, for example `https://your-preview.example/?qa=ally`. The exact query gate adds a red **TEST MODE** panel; removing the query returns the game to normal play.
+Add `?qa=ally` to a branch preview. The client-only QA panel uses production result generation, persistence, presentation, and settlement paths.
 
-The QA panel is entirely client-side. It has no backend, account, database, network request, or production-visible admin route. It queues deterministic reel stops and feature rolls through the same production result generator, persistence, animations, ally modifiers, settlement, retrigger, and summary paths used by ordinary play.
+The existing sections can force Ally triggers, specific free-spin outcomes, Mystery Token counts, normal modifiers, Rescue, retriggers, caps, overflow, and reload-ready pending results. The Strong Mystery section can queue or force any Strong Modifier, select a payline, character, or Gathering group, queue repeated atomic instances, make random draws, and force a deterministic Commune Chaos package.
 
-Recommended ally test flow:
+The current reel math has no standalone non-trigger Big Win, so that QA case remains paired with the natural Three Trees result instead of fabricating an impossible payout.
 
-1. Press **Trigger Free Spins**. The next paid spin is forced to natural Three Trees and still pays, settles, and opens the real feature normally.
-2. Choose an ally manually, or select one in the panel and press **Apply Ally Selection**.
-3. Press the normal **Start** button. QA step mode pauses before each free spin.
-4. Select a precise next result, then press **Queue & Run Next**. Available cases include a clean loss, weak win, ordinary Small Win, Nice Win, Big Win, retrigger, Tree Awakening, and named combination.
-5. Use **Force Ally Ability** to prepare the current ally's qualifying state and next result.
-6. Use **Set 1 Spin Left** to reach Insurance, Echo, or the summary quickly.
-7. Use **Reset Feature State** before switching to another ally.
+Remove `?qa=ally` for normal play.
 
-The **Mystery QA** section can force one, two, three, or four-plus tokens; queue any modifier; set or clear the Mystery Free Spin count; force a Mystery Free Spin into Three Trees; exercise Rescue loss-to-win; compare Fortune Burst wins and losses; and run deterministic Spotlight, Center Tree, Double Commune, and strong-pool fallback cases.
-
-The **Ally Mystery Extensions** section adds direct controls for 3 Tokens, 4+ Tokens, natural retrigger plus 4 Tokens, final-spin extension, repeated extension chains, safety-cap overflow, reload-ready pending settlement, and a seven-Ally mobile HUD preview. Every control uses production result, persistence, settlement, and feature-loop paths rather than a separate fake implementation.
-
-The current reel math has no standalone non-trigger Big Win. The QA Big Win case therefore truthfully produces a Big Win together with natural Three Trees instead of fabricating a payout outside the production math. QA settings and queued cases use `sessionStorage`; the actual game and feature state continue to use the normal reload-safe persistence layer.
-
-## Commands
+## Tests and simulation
 
 ```bash
 npm test
 npm run test:allies
 npm run test:mystery
 npm run test:ally-mystery
+npm run test:strong-mystery
 npm run test:qa
 npm run simulate
 npm run simulate:json
 npm run simulate:monte-carlo
+npm run simulate:strong-paired
 node tools/simulate.mjs --check
-node tools/simulate.mjs --check --mystery-sessions=50000
-node tools/simulate.mjs --monte-carlo --sessions=200000
 node tools/simulate-mystery-scatter.mjs --cycles=50000 --ally-cycles=50000 --seed=1297634388
-node tools/simulate-mystery-scatter.mjs --cycles=500000 --ally-cycles=100000 --seed=1297634388 --json
+node tools/simulate-strong-mystery.mjs --cycles=500000 --ally-cycles=100000 --seed=1297634388 --json
+node tools/simulate-strong-mystery-paired.mjs --cycles=500000 --ally-cycles=100000 --seed=1297634388 --json
 ```
+
+The original exact reel pass remains in `tools/simulate.mjs`. `tools/simulate-strong-mystery.mjs` provides detailed Strong selection, payout, Rescue, loop, Fortune, cap, overflow, and maximum-payout diagnostics. `tools/simulate-strong-mystery-paired.mjs` runs matched equal-sized before and after samples, including per-Ally RTP comparisons.
+
+The Strong system does not automatically tune reel strips, Scatter frequency, Mystery awards, base payouts, Commune payouts, normal modifiers, Ally abilities, starting spins, retriggers, or ordinary Fortune gains. Any balance adjustment requires a separate reviewed decision.
 
 ## Feature flags
 
@@ -193,12 +141,9 @@ CONFIG.features.allyAbilities
 CONFIG.features.characterReactions
 ```
 
-Disabling `allyAbilities` preserves the pre-ally free-spin result math. Legacy sessions also follow the pre-ally path. Selection presentation is separately controlled by `chooseYourAlly`. The Mystery system is enabled by both `scatters` and `mysteryModifiers`; QA overrides remain gated behind `?qa=ally` and never affect normal-play odds.
-
 ## Known limitations
 
 - Physical iPhone Safari, iPhone Chrome, and in-app-browser verification is still required before merge.
-- Gabi's 512-attempt production guard has a deterministic fallback. The probability of exhausting the positive-result draw loop is negligible, but it is not mathematically identical to an unbounded loop.
-- The strong Mystery Modifier pool is intentionally empty in v1. Four-plus tokens use the tested normal-modifier fallback path.
+- Gabi's guarded win-only replacement draw has a deterministic fallback.
 - Persistence remains local to the browser.
-- No risk-or-collect system, daily reward, secret event, backend, database, framework, bundler, or runtime dependency is included.
+- No risk-or-collect system, daily reward, backend, database, framework, bundler, or runtime dependency is included.
