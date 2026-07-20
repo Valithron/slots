@@ -25,7 +25,10 @@
     "js/strong-mystery-presentation.js",
     "js/strong-mystery.js",
     "js/ally-feature-compact-ui.js",
+    "js/help-accordion.js",
+    "js/qa-audio-positioning.js",
     "js/game-engine-core.js",
+    "js/help-combo-inline.js",
   ];
   const load = src => new Promise((resolve, reject) => {
     const script = document.createElement("script");
