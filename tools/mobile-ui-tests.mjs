@@ -11,6 +11,7 @@ const compactCss = read("ally-feature-compact.css");
 const qaCss = read("qa-mode.css");
 const helpCss = read("help-accordion.css");
 const allyUi = read("js/ally-ui.js");
+const allyConfig = read("js/ally-config.js");
 const compactUi = read("js/ally-feature-compact-ui.js");
 const qaUi = read("js/mobile-usability-qa.js");
 const helpUi = read("js/help-accordion.js");
@@ -228,6 +229,7 @@ includesAll(helpUi, [
   "CONFIG.allyOrder",
   "CONFIG.allies[id]",
   "definition.portrait",
+  "definition.abilityName",
   "CONFIG.mystery.normalModifierPool",
   "app.mystery?.MODIFIER_NAMES",
   "app.strongMystery?.ids",
@@ -235,14 +237,24 @@ includesAll(helpUi, [
   "CONFIG.mystery.strong",
 ], "configuration-backed Help content");
 
+includesAll(allyConfig, [
+  '"No Whammys"',
+  '"I’m Listening"',
+  '"Big Win"',
+  '"Eww"',
+  '"Rage-Bait"',
+  '"Big Lemons"',
+  '"Fastball"',
+], "central Ally configuration");
+
 includesAll(helpUi, [
-  "No Whammys",
-  "I’m Listening",
-  "Big Win",
-  "Eww",
-  "Rage-Bait",
-  "Big Lemons",
-  "Fastball",
+  'sterling: "Each losing spin builds an Insurance Pot.',
+  'cydney: `Cydney remembers the first winning spin',
+  'ryan: `One of the first ${numberWord',
+  'gabi: `Gabi replays the first weak win below',
+  'cooper: `Consecutive losses build Rage.',
+  'kenly: `Every natural Small Win receives',
+  'ashley: "Ashley replays the first losing spin once.',
   'spotlight: "Boosts line wins',
   '"center-tree": "Turns the center cell',
   '"double-commune": "Boosts named Commune Combo awards.',
