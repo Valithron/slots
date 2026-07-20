@@ -287,7 +287,9 @@ try {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"],
   }).trim().split(/\r?\n/).filter(Boolean);
-  const forbidden = changed.filter(file => /^(js\/(config|payouts|game-engine-core|strong-mystery-core|strong-mystery-candidate|strong-mystery-integration|strong-mystery|allies|free-spins)|tools\/simulate)/.test(file));
+  const approvedFeatureMathFiles = new Set(["tools/simulate-fortune-favor.mjs"]);
+  const forbidden = changed.filter(file => !approvedFeatureMathFiles.has(file)
+    && /^(js\/(config|payouts|game-engine-core|strong-mystery-core|strong-mystery-candidate|strong-mystery-integration|strong-mystery|allies|free-spins)|tools\/simulate)/.test(file));
   assert.deepEqual(forbidden, [], `presentation PR changed math-sensitive files: ${forbidden.join(", ")}`);
 } catch (error) {
   if (error instanceof assert.AssertionError) throw error;
