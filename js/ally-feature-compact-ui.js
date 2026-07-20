@@ -295,7 +295,7 @@
 
       updateCompactAllyHud(session);
       updateCompactMystery(model.state, model.phase, summaryMode);
-      if (activePlay) positionPlayClusterOnce(session);
+      if (activePlay && session.status === FS.READY) positionPlayClusterOnce(session);
       if (!session?.active) positionedSessionId = null;
     }
 
