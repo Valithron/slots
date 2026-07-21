@@ -1,0 +1,49 @@
+name: Fortune Favor Validation
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run full deterministic suite
+        run: npm test
+
+      - name: Run dedicated Fortune Favor suite
+        run: npm run test:fortune-favor
+
+      - name: Run standard simulation
+        run: npm run simulate
+
+      - name: Run standard JSON simulation
+        run: npm run simulate:json > standard-simulation.json
+
+      - name: Run standard Monte Carlo simulation
+        run: npm run simulate:monte-carlo
+
+      - name: Run matched 500k Fortune Favor simulation
+        run: npm run simulate:fortune-favor:json > fortune-favor-simulation.json
+
+      - name: Upload simulation reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: fortune-favor-simulation
+          path: |
+            standard-simulation.json
+            fortune-favor-simulation.json
+          if-no-files-found: error
+          retention-days: 30
